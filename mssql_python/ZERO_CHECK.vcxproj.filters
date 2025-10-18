@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\github\mssql-python\mssql_python\CMakeFiles\4189ba96c2b206c34f520eb8eaee83d1\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{AF026E58-C528-3DDC-A896-052B5804F301}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

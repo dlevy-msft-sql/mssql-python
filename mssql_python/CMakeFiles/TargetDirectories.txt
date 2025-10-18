@@ -1,0 +1,3 @@
+C:/github/mssql-python/mssql_python/CMakeFiles/ddbc_bindings.dir
+C:/github/mssql-python/mssql_python/CMakeFiles/ALL_BUILD.dir
+C:/github/mssql-python/mssql_python/CMakeFiles/ZERO_CHECK.dir

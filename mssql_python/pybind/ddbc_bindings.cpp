@@ -21,8 +21,6 @@
 #define SQL_SS_TIMESTAMPOFFSET (-155)
 #define SQL_C_SS_TIMESTAMPOFFSET (0x4001)
 #define MAX_DIGITS_IN_NUMERIC 64
-#define SQL_MAX_NUMERIC_LEN 16
-#define SQL_SS_XML (-152)
 
 #define STRINGIFY_FOR_CASE(x) \
     case x:                   \
@@ -58,18 +56,12 @@ struct NumericData {
     SQLCHAR precision;
     SQLSCHAR scale;
     SQLCHAR sign;  // 1=pos, 0=neg
-    std::string val; // 123.45 -> 12345
+    std::uint64_t val; // 123.45 -> 12345
 
-    NumericData() : precision(0), scale(0), sign(0), val(SQL_MAX_NUMERIC_LEN, '\0') {}
+    NumericData() : precision(0), scale(0), sign(0), val(0) {}
 
-    NumericData(SQLCHAR precision, SQLSCHAR scale, SQLCHAR sign, const std::string& valueBytes)
-        : precision(precision), scale(scale), sign(sign), val(SQL_MAX_NUMERIC_LEN, '\0') {
-        if (valueBytes.size() > SQL_MAX_NUMERIC_LEN) {
-            throw std::runtime_error("NumericData valueBytes size exceeds SQL_MAX_NUMERIC_LEN (16)");
-        }
-        // Copy binary data to buffer, remaining bytes stay zero-padded
-        std::memcpy(&val[0], valueBytes.data(), valueBytes.size());
-    }
+    NumericData(SQLCHAR precision, SQLSCHAR scale, SQLCHAR sign, std::uint64_t value)
+        : precision(precision), scale(scale), sign(sign), val(value) {}
 };
 
 // Struct to hold the DateTimeOffset structure
@@ -565,10 +557,9 @@ SQLRETURN BindParameters(SQLHANDLE hStmt, const py::list& params,
                 decimalPtr->sign = decimalParam.sign;
                 // Convert the integer decimalParam.val to char array
                 std::memset(static_cast<void*>(decimalPtr->val), 0, sizeof(decimalPtr->val));
-                size_t copyLen = std::min(decimalParam.val.size(), sizeof(decimalPtr->val));
-                if (copyLen > 0) {
-                    std::memcpy(decimalPtr->val, decimalParam.val.data(), copyLen);
-                }
+                std::memcpy(static_cast<void*>(decimalPtr->val),
+			    reinterpret_cast<char*>(&decimalParam.val),
+                            sizeof(decimalParam.val));
                 dataPtr = static_cast<void*>(decimalPtr);
                 break;
             }
@@ -1419,18 +1410,6 @@ SQLRETURN SQLExecDirect_wrap(SqlHandlePtr StatementHandle, const std::wstring& Q
         DriverLoader::getInstance().loadDriver();  // Load the driver
     }
 
-    // Ensure statement is scrollable BEFORE executing
-    if (SQLSetStmtAttr_ptr && StatementHandle && StatementHandle->get()) {
-        SQLSetStmtAttr_ptr(StatementHandle->get(),
-                           SQL_ATTR_CURSOR_TYPE,
-                           (SQLPOINTER)SQL_CURSOR_STATIC,
-                           0);
-        SQLSetStmtAttr_ptr(StatementHandle->get(),
-                           SQL_ATTR_CONCURRENCY,
-                           (SQLPOINTER)SQL_CONCUR_READ_ONLY,
-                           0);
-    }
-
     SQLWCHAR* queryPtr;
 #if defined(__APPLE__) || defined(__linux__)
     std::vector<SQLWCHAR> queryBuffer = WStringToSQLWCHAR(Query);
@@ -1537,7 +1516,7 @@ SQLRETURN SQLTables_wrap(SqlHandlePtr StatementHandle,
 SQLRETURN SQLExecute_wrap(const SqlHandlePtr statementHandle,
                           const std::wstring& query /* TODO: Use SQLTCHAR? */,
                           const py::list& params, std::vector<ParamInfo>& paramInfos,
-                          py::list& isStmtPrepared, const bool usePrepare = true) {
+                          py::list& isStmtPrepared, const bool usePrepare = true, const bool isScrollable = false) {
     LOG("Execute SQL Query - {}", query.c_str());
     if (!SQLPrepare_ptr) {
         LOG("Function pointer not initialized. Loading the driver.");
@@ -1556,16 +1535,16 @@ SQLRETURN SQLExecute_wrap(const SqlHandlePtr statementHandle,
         LOG("Statement handle is null or empty");
     }
 
-    // Ensure statement is scrollable BEFORE executing
-    if (SQLSetStmtAttr_ptr && hStmt) {
-        SQLSetStmtAttr_ptr(hStmt,
-                           SQL_ATTR_CURSOR_TYPE,
-                           (SQLPOINTER)SQL_CURSOR_STATIC,
-                           0);
-        SQLSetStmtAttr_ptr(hStmt,
-                           SQL_ATTR_CONCURRENCY,
-                           (SQLPOINTER)SQL_CONCUR_READ_ONLY,
-                           0);
+    if (isScrollable &&SQLSetStmtAttr_ptr && hStmt) {
+        // Ensure statement is scrollable BEFORE executing
+            SQLSetStmtAttr_ptr(hStmt,
+                               SQL_ATTR_CURSOR_TYPE,
+                               (SQLPOINTER)SQL_CURSOR_STATIC,
+                               0);
+            SQLSetStmtAttr_ptr(hStmt,
+                               SQL_ATTR_CONCURRENCY,
+                               (SQLPOINTER)SQL_CONCUR_READ_ONLY,
+                               0);
     }
 
     SQLWCHAR* queryPtr;
@@ -2059,17 +2038,15 @@ SQLRETURN BindParameterArray(SQLHANDLE hStmt,
                             throw std::runtime_error(MakeParamMismatchErrorStr(info.paramCType, paramIndex));
                         }
                         NumericData decimalParam = element.cast<NumericData>();
-                        LOG("Received numeric parameter at [%zu]: precision=%d, scale=%d, sign=%d, val=%s",
-                            i, decimalParam.precision, decimalParam.scale, decimalParam.sign, decimalParam.val.c_str());
-                        SQL_NUMERIC_STRUCT& target = numericArray[i];
-                        std::memset(&target, 0, sizeof(SQL_NUMERIC_STRUCT));
-                        target.precision = decimalParam.precision;
-                        target.scale = decimalParam.scale;
-                        target.sign = decimalParam.sign;
-                        size_t copyLen = std::min(decimalParam.val.size(), sizeof(target.val));
-                        if (copyLen > 0) {
-                            std::memcpy(target.val, decimalParam.val.data(), copyLen);
-                        }
+                        LOG("Received numeric parameter at [%zu]: precision=%d, scale=%d, sign=%d, val=%lld",
+                            i, decimalParam.precision, decimalParam.scale, decimalParam.sign, decimalParam.val);
+                        numericArray[i].precision = decimalParam.precision;
+                        numericArray[i].scale = decimalParam.scale;
+                        numericArray[i].sign = decimalParam.sign;
+                        std::memset(numericArray[i].val, 0, sizeof(numericArray[i].val));
+                        std::memcpy(numericArray[i].val,
+                                    reinterpret_cast<const char*>(&decimalParam.val),
+                                    std::min(sizeof(decimalParam.val), sizeof(numericArray[i].val)));
                         strLenOrIndArray[i] = sizeof(SQL_NUMERIC_STRUCT);
                     }
                     dataPtr = numericArray;
@@ -2536,12 +2513,6 @@ SQLRETURN SQLGetData_wrap(SqlHandlePtr StatementHandle, SQLUSMALLINT colCount, p
 				}
                 break;
             }
-            case SQL_SS_XML:
-            {
-                LOG("Streaming XML for column {}", i);
-                row.append(FetchLobColumnData(hStmt, i, SQL_C_WCHAR, true, false));
-                break;
-            }
             case SQL_WCHAR:
             case SQL_WVARCHAR:
             case SQL_WLONGVARCHAR: {
@@ -2822,6 +2793,7 @@ SQLRETURN SQLGetData_wrap(SqlHandlePtr StatementHandle, SQLUSMALLINT colCount, p
                         microseconds,
                         tzinfo
                     );
+                    py_dt = py_dt.attr("astimezone")(datetime.attr("timezone").attr("utc"));
                     row.append(py_dt);
                 } else {
                     LOG("Error fetching DATETIMEOFFSET for column {}, ret={}", i, ret);
@@ -2967,7 +2939,7 @@ SQLRETURN SQLFetchScroll_wrap(SqlHandlePtr StatementHandle, SQLSMALLINT FetchOri
 
 // For column in the result set, binds a buffer to retrieve column data
 // TODO: Move to anonymous namespace, since it is not used outside this file
-SQLRETURN SQLBindColums(SQLHSTMT hStmt, ColumnBuffers& buffers, py::list& columnNames,
+SQLRETURN SQLBindColumns(SQLHSTMT hStmt, ColumnBuffers& buffers, py::list& columnNames,
                         SQLUSMALLINT numCols, int fetchSize) {
     SQLRETURN ret = SQL_SUCCESS;
     // Bind columns based on their data types
@@ -3334,6 +3306,7 @@ SQLRETURN FetchBatchData(SQLHSTMT hStmt, ColumnBuffers& buffers, py::list& colum
                             dtoValue.fraction / 1000,  // ns → µs
                             tzinfo
                         );
+                        py_dt = py_dt.attr("astimezone")(datetime.attr("timezone").attr("utc"));
                         row.append(py_dt);
                     } else {
                         row.append(py::none());
@@ -3412,7 +3385,6 @@ size_t calculateRowSize(py::list& columnNames, SQLUSMALLINT numCols) {
             case SQL_LONGVARCHAR:
                 rowSize += columnSize;
                 break;
-            case SQL_SS_XML:
             case SQL_WCHAR:
             case SQL_WVARCHAR:
             case SQL_WLONGVARCHAR:
@@ -3517,7 +3489,7 @@ SQLRETURN FetchMany_wrap(SqlHandlePtr StatementHandle, py::list& rows, int fetch
 
         if ((dataType == SQL_WVARCHAR || dataType == SQL_WLONGVARCHAR || 
              dataType == SQL_VARCHAR || dataType == SQL_LONGVARCHAR ||
-             dataType == SQL_VARBINARY || dataType == SQL_LONGVARBINARY || dataType == SQL_SS_XML) &&
+             dataType == SQL_VARBINARY || dataType == SQL_LONGVARBINARY) &&
             (columnSize == 0 || columnSize == SQL_NO_TOTAL || columnSize > SQL_MAX_LOB_SIZE)) {
             lobColumns.push_back(i + 1); // 1-based
         }
@@ -3542,7 +3514,7 @@ SQLRETURN FetchMany_wrap(SqlHandlePtr StatementHandle, py::list& rows, int fetch
     ColumnBuffers buffers(numCols, fetchSize);
 
     // Bind columns
-    ret = SQLBindColums(hStmt, buffers, columnNames, numCols, fetchSize);
+    ret = SQLBindColumns(hStmt, buffers, columnNames, numCols, fetchSize);
     if (!SQL_SUCCEEDED(ret)) {
         LOG("Error when binding columns");
         return ret;
@@ -3639,7 +3611,7 @@ SQLRETURN FetchAll_wrap(SqlHandlePtr StatementHandle, py::list& rows) {
 
         if ((dataType == SQL_WVARCHAR || dataType == SQL_WLONGVARCHAR || 
              dataType == SQL_VARCHAR || dataType == SQL_LONGVARCHAR ||
-             dataType == SQL_VARBINARY || dataType == SQL_LONGVARBINARY || dataType == SQL_SS_XML) &&
+             dataType == SQL_VARBINARY || dataType == SQL_LONGVARBINARY) &&
             (columnSize == 0 || columnSize == SQL_NO_TOTAL || columnSize > SQL_MAX_LOB_SIZE)) {
             lobColumns.push_back(i + 1); // 1-based
         }
@@ -3663,7 +3635,7 @@ SQLRETURN FetchAll_wrap(SqlHandlePtr StatementHandle, py::list& rows) {
     ColumnBuffers buffers(numCols, fetchSize);
 
     // Bind columns
-    ret = SQLBindColums(hStmt, buffers, columnNames, numCols, fetchSize);
+    ret = SQLBindColumns(hStmt, buffers, columnNames, numCols, fetchSize);
     if (!SQL_SUCCEEDED(ret)) {
         LOG("Error when binding columns");
         return ret;
@@ -3810,7 +3782,7 @@ PYBIND11_MODULE(ddbc_bindings, m) {
     // Define numeric data class
     py::class_<NumericData>(m, "NumericData")
         .def(py::init<>())
-        .def(py::init<SQLCHAR, SQLSCHAR, SQLCHAR, const std::string&>())
+        .def(py::init<SQLCHAR, SQLSCHAR, SQLCHAR, std::uint64_t>())
         .def_readwrite("precision", &NumericData::precision)
         .def_readwrite("scale", &NumericData::scale)
         .def_readwrite("sign", &NumericData::sign)

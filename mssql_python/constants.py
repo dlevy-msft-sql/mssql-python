@@ -501,14 +501,4 @@ _ALLOWED_CONNECTION_STRING_PARAMS = {
     "packetsize": "PacketSize",
 }
 
-def test_cursor_description(cursor):
-    """Test cursor description"""
-    cursor.execute("SELECT database_id, name FROM sys.databases;")
-    desc = cursor.description
-    expected_description = [
-        ("database_id", 4, None, 10, 10, 0, False),  # SQL_INTEGER
-        ("name", -9, None, 128, 128, 0, False),  # SQL_WVARCHAR
-    ]
-    assert len(desc) == len(expected_description), "Description length mismatch"
-    for desc, expected in zip(desc, expected_description):
-        assert desc == expected, f"Description mismatch: {desc} != {expected}"
+# (Function removed; no replacement needed)

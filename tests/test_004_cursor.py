@@ -999,7 +999,7 @@ def test_fetchall(cursor):
 
 
 def test_fetchall_lob(cursor):
-    """Test fetching all rows"""
+    """Test fetching all rows with LOB columns"""
     cursor.execute("SELECT * FROM #pytest_all_data_types")
     rows = cursor.fetchall()
     assert isinstance(rows, list), "fetchall should return a list"
@@ -13272,13 +13272,6 @@ LINESTRING_WKT = "LINESTRING(-122.360 47.656, -122.343 47.656)"
 POLYGON_WKT = "POLYGON((-122.358 47.653, -122.348 47.649, -122.348 47.658, -122.358 47.653))"
 MULTIPOINT_WKT = "MULTIPOINT((-122.34900 47.65100), (-122.11100 47.67700))"
 COLLECTION_WKT = "GEOMETRYCOLLECTION(POINT(-122.34900 47.65100))"
-
-# Large geography for LOB testing
-LARGE_POLYGON_WKT = (
-    "POLYGON(("
-    + ", ".join([f"{-122.5 + i*0.001} {47.5 + i*0.001}" for i in range(5000)])
-    + ", -122.5 47.5))"
-)
 
 
 def test_geography_basic_insert_fetch(cursor, db_connection):

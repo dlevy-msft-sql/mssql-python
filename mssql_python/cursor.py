@@ -955,7 +955,7 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             ddbc_sql_const.SQL_LONGVARBINARY.value: bytes,
             ddbc_sql_const.SQL_GUID.value: uuid.UUID,
             ddbc_sql_const.SQL_SS_UDT.value: bytes,  # UDTs mapped to bytes
-            ddbc_sql_const.SQL_XML.value: xml,  # XML mapped to str
+            ddbc_sql_const.SQL_XML.value: str,  # XML mapped to str
             ddbc_sql_const.SQL_DATETIME2.value: datetime.datetime,
             ddbc_sql_const.SQL_SMALLDATETIME.value: datetime.datetime,
             ddbc_sql_const.SQL_DATETIMEOFFSET.value: datetime.datetime,

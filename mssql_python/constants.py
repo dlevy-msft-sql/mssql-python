@@ -115,6 +115,7 @@ class ConstantsDDBC(Enum):
     SQL_FETCH_RELATIVE = 6
     SQL_FETCH_BOOKMARK = 8
     SQL_DATETIMEOFFSET = -155
+    SQL_SS_UDT = -151  # SQL Server User-Defined Types (geometry, geography, hierarchyid)
     SQL_C_SS_TIMESTAMPOFFSET = 0x4001
     SQL_SCOPE_CURROW = 0
     SQL_BEST_ROWID = 1
@@ -499,3 +500,15 @@ _ALLOWED_CONNECTION_STRING_PARAMS = {
     # internally.
     "packetsize": "PacketSize",
 }
+
+def test_cursor_description(cursor):
+    """Test cursor description"""
+    cursor.execute("SELECT database_id, name FROM sys.databases;")
+    desc = cursor.description
+    expected_description = [
+        ("database_id", 4, None, 10, 10, 0, False),  # SQL_INTEGER
+        ("name", -9, None, 128, 128, 0, False),  # SQL_WVARCHAR
+    ]
+    assert len(desc) == len(expected_description), "Description length mismatch"
+    for desc, expected in zip(desc, expected_description):
+        assert desc == expected, f"Description mismatch: {desc} != {expected}"

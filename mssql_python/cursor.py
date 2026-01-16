@@ -752,9 +752,40 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
                 logger.warning("Error removing cursor from connection tracking: %s", e)
 
         if self.hstmt:
-            self.hstmt.free()
-            self.hstmt = None
-            logger.debug("SQLFreeHandle succeeded")
+            # Check if connection is already closed - if so, the ODBC handle is already
+            # invalid and we should NOT call SQLFreeHandle. This prevents segfaults
+            # when GC runs after connection.close(). See GitHub issue #341.
+            # We check connection.closed property (added in PR #398) to determine if
+            # the connection's ODBC handles have been freed.
+            #
+            # IMPORTANT: Default to "closed" (safe to skip free). Only proceed with
+            # freeing if we can CONFIRM the connection is alive and open.
+            # If connection is None or garbage collected, we must skip the free.
+            connection_is_open = False
+            try:
+                if hasattr(self, "_connection") and self._connection is not None:
+                    # Only set to open if connection exists AND is not closed
+                    connection_is_open = not getattr(self._connection, "closed", True)
+            except (ReferenceError, AttributeError):
+                # Connection object may have been garbage collected or partially destroyed
+                connection_is_open = False
+
+            if connection_is_open:
+                self.hstmt.free()
+                self.hstmt = None
+                logger.debug("SQLFreeHandle succeeded")
+            else:
+                # Issue #341: Connection is already closed, ODBC driver has already freed
+                # the statement handle. We must NOT call SQLFreeHandle or even let the
+                # C++ destructor call it. Use invalidate() to mark the handle as null
+                # without calling SQLFreeHandle, then release the Python reference.
+                logger.debug("Skipping SQLFreeHandle - parent connection already closed or gone")
+                if self.hstmt is not None:
+                    try:
+                        self.hstmt.invalidate()
+                    except Exception:
+                        pass  # Handle may already be invalid
+                self.hstmt = None
         self._clear_rownumber()
         self.closed = True
 
@@ -2573,16 +2604,26 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         This is a safety net to ensure resources are cleaned up
         even if close() was not called explicitly.
         If the cursor is already closed, it will not raise an exception during cleanup.
+
+        IMPORTANT: This handles the case where GC runs after the parent connection
+        is closed. In this scenario, the ODBC statement handle is already invalid
+        because the connection handle was freed first. Attempting to call
+        SQLFreeHandle on an invalid handle causes a segfault. See GitHub issue #341.
         """
+        import sys
+
+        # Check for interpreter shutdown first
+        if sys is None or (hasattr(sys, "_is_finalizing") and sys._is_finalizing()):
+            # During interpreter shutdown, skip cleanup to avoid crashes
+            return
+
         if "closed" not in self.__dict__ or not self.closed:
             try:
                 self.close()
             except Exception as e:  # pylint: disable=broad-exception-caught
                 # Don't raise an exception in __del__, just log it
                 # If interpreter is shutting down, we might not have logging set up
-                import sys
-
-                if sys and sys._is_finalizing():
+                if hasattr(sys, "_is_finalizing") and sys._is_finalizing():
                     # Suppress logging during interpreter shutdown
                     return
                 logger.debug("Exception during cursor cleanup in __del__: %s", e)

@@ -1182,6 +1182,22 @@ void SqlHandle::free() {
     }
 }
 
+/*
+ * Issue #341: Mark handle as invalid without calling SQLFreeHandle.
+ * 
+ * This method is called when the parent connection is closed. The ODBC driver
+ * automatically frees all statement handles when the connection handle is freed,
+ * so we must NOT call SQLFreeHandle on these orphaned handles later - doing so
+ * causes a segmentation fault.
+ * 
+ * By calling invalidate() before connection.close(), we ensure that any later
+ * destructor calls (~SqlHandle) or explicit free() calls will see _handle as
+ * nullptr and skip the SQLFreeHandle call.
+ */
+void SqlHandle::invalidate() {
+    _handle = nullptr;
+}
+
 SQLRETURN SQLGetTypeInfo_Wrapper(SqlHandlePtr StatementHandle, SQLSMALLINT DataType) {
     if (!SQLGetTypeInfo_ptr) {
         ThrowStdException("SQLGetTypeInfo function not loaded");
@@ -4360,7 +4376,10 @@ PYBIND11_MODULE(ddbc_bindings, m) {
         .def_readwrite("ddbcErrorMsg", &ErrorInfo::ddbcErrorMsg);
 
     py::class_<SqlHandle, SqlHandlePtr>(m, "SqlHandle")
-        .def("free", &SqlHandle::free, "Free the handle");
+        .def("free", &SqlHandle::free, "Free the handle")
+        .def("invalidate", &SqlHandle::invalidate, 
+             "Mark handle as invalid without calling SQLFreeHandle (Issue #341). "
+             "Call this when the parent connection is closed to prevent segfault on GC.");
 
     py::class_<ConnectionHandle>(m, "Connection")
         .def(py::init<const std::string&, bool, const py::dict&>(), py::arg("conn_str"),

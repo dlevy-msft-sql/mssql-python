@@ -1,0 +1,152 @@
+FROM fedora:39
+
+# Install SQL Server 2022
+RUN curl https://packages.microsoft.com/config/rhel/9/mssql-server-2022.repo > /etc/yum.repos.d/mssql-server-2022.repo && \
+    curl https://packages.microsoft.com/config/rhel/9/prod.repo > /etc/yum.repos.d/msprod.repo && \
+    ACCEPT_EULA=Y dnf install -y mssql-server mssql-tools mssql-server-fts && \
+    dnf clean all
+
+# Install Python, pip, git, and development tools (added cmake, pybind11-devel, unixODBC-devel for C++ build)
+RUN dnf install -y python3 python3-pip git gcc gcc-c++ python3-devel cmake pybind11-devel unixODBC-devel && \
+    dnf clean all && \
+    ln -sf /usr/bin/python3 /usr/bin/python && \
+    pip3 install pybind11
+
+# Install mssql-python DBAPI from our fix branch (build from source for C++ extensions)
+WORKDIR /mssql-python
+RUN git clone --depth 1 -b fix/issue-341-segfault-handle-lifecycle \
+    https://github.com/dlevy-msft-sql/mssql-python.git . && \
+    cd mssql_python/pybind && chmod +x build.sh && \
+    PYTHON_INCLUDE_DIR=/usr/include/python3.12 \
+    PYBIND11_INCLUDE_DIR=/usr/include/pybind11 \
+    ./build.sh && \
+    cd /mssql-python && pip3 install -e .
+
+RUN pip3 install pytest
+
+ENV PATH=${PATH}:/opt/mssql/bin:/opt/mssql-tools/bin
+
+# Default SQL Server TCP/Port
+EXPOSE 1433
+
+# Embed the SQL setup script
+RUN cat <<'EOF' > /mssql_setup.sql
+sp_configure 'show advanced options', 1;
+GO
+RECONFIGURE;
+go
+sp_configure 'max server memory', 4096;
+go
+sp_configure 'max worker threads', 512;
+go
+RECONFIGURE;
+go
+CREATE DATABASE test;
+go
+CREATE LOGIN scott with password='tiger^5HHH';
+GRANT CONTROL SERVER TO scott;
+USE test;
+go
+CREATE SCHEMA test_schema;
+go
+ALTER DATABASE test SET ALLOW_SNAPSHOT_ISOLATION ON
+ALTER DATABASE test SET READ_COMMITTED_SNAPSHOT ON
+go
+EOF
+
+# Embed the setup script (runs during build)
+RUN cat <<'EOF' > /mssql_setup.sh
+#!/bin/bash
+
+set -x
+
+export ACCEPT_EULA='Y'
+export MSSQL_SA_PASSWORD='wh0_CAR;ES!!'
+export MSSQL_PID=Developer
+
+/opt/mssql/bin/mssql-conf set memory.memorylimitmb 4096
+
+/opt/mssql/bin/sqlservr & PID=$!
+
+sleep 30s
+
+/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "${MSSQL_SA_PASSWORD}" -d master -i /mssql_setup.sql
+
+kill ${PID}
+
+sleep 10s
+EOF
+
+# Embed the entrypoint script (runs when container starts)
+RUN cat <<'EOF' > /entrypoint.sh
+#!/bin/bash
+
+set -e
+set -x
+
+export ACCEPT_EULA='Y'
+export MSSQL_SA_PASSWORD='wh0_CAR;ES!!'
+export MSSQL_PID=Developer
+
+# Start SQL Server in the background
+/opt/mssql/bin/sqlservr & PID=$!
+
+# Wait for SQL Server to be ready
+echo "Waiting for SQL Server to start..."
+sleep 30s
+
+# Clone SQLAlchemy from gerrit
+echo -e "\n\n\nCloning SQLAlchemy from gerrit..."
+cd /
+git clone https://gerrit.sqlalchemy.org/sqlalchemy/sqlalchemy
+
+cd /sqlalchemy
+
+# Fetch the specific review
+echo -e "\n\n\nFetching gerrit review 6149..."
+git fetch https://gerrit.sqlalchemy.org/sqlalchemy/sqlalchemy refs/changes/49/6149/14
+git checkout FETCH_HEAD
+
+# Install SQLAlchemy and test dependencies
+echo -e "\n\n\nInstalling SQLAlchemy and dependencies..."
+pip3 install -e .
+pip3 install pytest greenlet typing-extensions
+
+# Run the test suite multiple times to trigger the segfault
+echo -e "\n\n\nRunning reconnect tests to reproduce segfault..."
+echo "This will run the test suite in a loop until it crashes or completes 10 runs."
+
+CRASH_DETECTED=0
+for i in {1..10}; do
+    echo -e "\n=== Test Run $i ==="
+
+    if ! pytest test/engine/test_reconnect.py::RealReconnectTest \
+        --dburi "mssql+mssqlpython://scott:tiger^5HHH@localhost:1433/test?Encrypt=No" \
+        --disable-asyncio -s -v 2>&1; then
+
+        echo -e "\n\n*** CRASH DETECTED ON RUN $i ***"
+        CRASH_DETECTED=1
+        break
+    fi
+
+    echo "Run $i completed successfully"
+    sleep 1
+done
+
+if [ $CRASH_DETECTED -eq 0 ]; then
+    echo -e "\n\n*** No crash in 10 runs. The issue is intermittent and may require more runs. ***"
+else
+    echo -e "\n\n*** Segfault reproduced! ***"
+fi
+
+# Shut down SQL Server cleanly
+echo -e "\n\n\nShutting down SQL Server..."
+kill ${PID} 2>/dev/null || true
+sleep 5s
+EOF
+
+# Make scripts executable and run initial setup
+RUN chmod 755 /mssql_setup.sh /entrypoint.sh && \
+    /mssql_setup.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

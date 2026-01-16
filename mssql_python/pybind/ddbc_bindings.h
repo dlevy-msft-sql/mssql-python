@@ -378,6 +378,7 @@ class SqlHandle {
     SQLHANDLE get() const;
     SQLSMALLINT type() const;
     void free();
+    void invalidate();  // Mark handle as invalid without calling SQLFreeHandle (Issue #341)
 
   private:
     SQLSMALLINT _type;

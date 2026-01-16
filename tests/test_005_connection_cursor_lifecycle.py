@@ -692,3 +692,231 @@ sys.exit(0)  # Abrupt exit without joining threads
         result.returncode == 0
     ), f"Expected clean exit, but got exit code {result.returncode}. STDERR: {result.stderr}"
     assert "Exiting abruptly with active threads and pending queries" in result.stdout
+
+
+def test_cursor_gc_after_connection_close_no_segfault(conn_str):
+    """
+    Test for GitHub issue #341: Segfault in SQLFreeHandle during GC.
+
+    This test verifies that when:
+    1. A connection is closed (ODBC handles freed)
+    2. Cursor objects still exist in Python (not yet garbage collected)
+    3. GC runs later and cursor.__del__() is called
+
+    The cursor cleanup should NOT call SQLFreeHandle on the now-invalid handle,
+    preventing a segfault. The fix checks connection.closed before freeing handles.
+    """
+    import gc
+
+    # Create connection and multiple cursors
+    conn = connect(conn_str)
+    cursors = []
+    for i in range(5):
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT {i}")
+        cursor.fetchall()
+        cursors.append(cursor)
+
+    # Keep a reference to one cursor
+    orphan_cursor = cursors[2]
+
+    # Connection should be open
+    assert conn.closed is False, "Connection should be open"
+
+    # Close connection - cursor.close() will now see connection.closed == True
+    conn.close()
+
+    # Verify connection is closed
+    assert conn.closed is True, "Connection should be closed after close()"
+
+    # Clear cursor list but keep orphan_cursor alive
+    cursors.clear()
+    gc.collect()  # GC runs here but orphan_cursor is still alive
+
+    # Now delete orphan_cursor - this triggers __del__ -> close()
+    # close() should check connection.closed and skip SQLFreeHandle
+    del orphan_cursor
+    gc.collect()  # Should not segfault!
+
+    # If we get here without a segfault, the test passed
+
+
+def test_cursor_checks_connection_closed_before_free(conn_str):
+    """
+    Test that cursor.close() checks connection.closed property before freeing handles.
+
+    This is a unit test for the fix to GitHub issue #341.
+    The fix uses the Connection.closed property (added in PR #398) to determine
+    if the connection's ODBC handles have already been freed.
+    """
+    conn = connect(conn_str)
+
+    # Create multiple cursors
+    cursor1 = conn.cursor()
+    cursor2 = conn.cursor()
+    cursor3 = conn.cursor()
+
+    # Execute queries to allocate statement handles
+    cursor1.execute("SELECT 1")
+    cursor1.fetchall()
+    cursor2.execute("SELECT 2")
+    cursor2.fetchall()
+    cursor3.execute("SELECT 3")
+    cursor3.fetchall()
+
+    # Verify connection is open
+    assert conn.closed == False
+
+    # Close one cursor explicitly - should succeed
+    cursor1.close()
+    assert cursor1.closed == True
+
+    # Close connection
+    conn.close()
+    assert conn.closed == True
+
+    # Remaining cursors should be closed by connection.close()
+    assert cursor2.closed == True
+    assert cursor3.closed == True
+
+
+def test_cursor_close_skips_free_when_connection_closed(conn_str):
+    """
+    Test that Cursor.close() skips SQLFreeHandle when connection is already closed.
+
+    This tests the safety mechanism for GitHub issue #341 by simulating
+    the scenario where a cursor's close() is called after the connection is closed.
+    """
+    # Create connection and cursor
+    conn = connect(conn_str)
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1")
+    cursor.fetchall()
+
+    # Close connection first - this frees the ODBC connection handle
+    conn.close()
+
+    # Verify connection is closed
+    assert conn.closed is True
+
+    # The cursor was already closed by connection.close(), but calling close() again
+    # should be safe (idempotent) and should not try to free an invalid handle
+    cursor.close()
+
+    # If we get here without error, the test passed
+
+
+def test_issue_341_gc_during_normal_execution_no_segfault(conn_str):
+    """
+    Test for GitHub issue #341: Segfault during GC in normal execution.
+
+    This test reproduces the exact scenario reported in the issue:
+    https://github.com/microsoft/mssql-python/issues/341
+
+    The issue occurs when:
+    1. Connection is closed (ODBC connection handle freed)
+    2. Cursor objects still exist in Python memory (not yet garbage collected)
+    3. GC runs during NORMAL execution (not interpreter shutdown)
+       - This is the key difference from PR #361's fix which only checked sys.is_finalizing()
+    4. Cursor.__del__() is invoked and tries to free its ODBC statement handle
+    5. SQLFreeHandle() is called on an invalid handle → SEGFAULT
+
+    The scenario from the issue was:
+    - SQLAlchemy test_reconnect.py tests close connections and throw away cursors
+    - GC runs during engine creation in a subsequent test (normal execution)
+    - Cursor finalizers execute while handles are invalid
+    - sys.is_finalizing() returns False, so PR #361's fix didn't help
+
+    The fix checks connection.closed before calling SQLFreeHandle.
+    """
+    import gc
+
+    # Simulate the SQLAlchemy reconnect test scenario
+
+    # Phase 1: Create connection and cursors, simulate "disconnect" scenario
+    conn1 = connect(conn_str)
+    cursors = []
+    for i in range(3):
+        cursor = conn1.cursor()
+        cursor.execute(f"SELECT {i}")
+        cursor.fetchall()
+        cursors.append(cursor)
+
+    # Keep a reference to cursors (simulating SQLAlchemy keeping cursor refs)
+    orphan_cursors = cursors.copy()
+
+    # Close connection - simulates disconnect/reconnect scenario
+    # This frees the ODBC connection handle, making statement handles invalid
+    conn1.close()
+
+    # At this point:
+    # - conn1.closed == True
+    # - ODBC connection handle is freed
+    # - orphan_cursors still have references to invalid statement handles
+    # - sys.is_finalizing() returns False (we're in normal execution)
+
+    # Phase 2: Create a NEW connection - simulates "reconnect" scenario
+    # This is when GC typically runs (during object allocation)
+    conn2 = connect(conn_str)
+
+    # Trigger GC explicitly to simulate what happens during engine creation
+    # In the real scenario, GC runs implicitly during object allocation
+    gc.collect()
+
+    # The orphan_cursors.__del__() should have been called by now
+    # If the fix works, it should have checked connection.closed and skipped SQLFreeHandle
+
+    # Phase 3: Verify the new connection works
+    cursor2 = conn2.cursor()
+    cursor2.execute("SELECT 'reconnect_test'")
+    result = cursor2.fetchone()
+    assert result[0] == "reconnect_test", f"Expected 'reconnect_test', got {result[0]}"
+
+    # Clean up properly
+    cursor2.close()
+    conn2.close()
+
+    # Clear the orphan cursors list and run GC again
+    orphan_cursors.clear()
+    cursors.clear()
+    gc.collect()
+
+    # If we get here without a segfault, the test passed
+
+
+def test_issue_341_multiple_reconnect_cycles_no_segfault(conn_str):
+    """
+    Test for GitHub issue #341: Multiple reconnect cycles without segfault.
+
+    This simulates what SQLAlchemy's test_reconnect.py does - multiple
+    connect/disconnect cycles with cursors being garbage collected at
+    unpredictable times.
+    """
+    import gc
+
+    all_orphan_cursors = []
+
+    # Simulate multiple reconnect cycles
+    for cycle in range(5):
+        conn = connect(conn_str)
+        cursors = []
+        for i in range(3):
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT {cycle * 10 + i}")
+            cursor.fetchall()
+            cursors.append(cursor)
+
+        # Keep references to cursors (simulating refs kept elsewhere)
+        all_orphan_cursors.extend(cursors)
+
+        # Close connection without closing cursors
+        conn.close()
+
+        # Trigger GC - this is when the segfault would occur
+        gc.collect()
+
+    # Final cleanup
+    all_orphan_cursors.clear()
+    gc.collect()
+
+    # If we get here without a segfault, the test passed

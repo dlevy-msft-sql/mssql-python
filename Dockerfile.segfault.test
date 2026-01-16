@@ -95,16 +95,31 @@ export MSSQL_PID=Developer
 echo "Waiting for SQL Server to start..."
 sleep 30s
 
-# Clone SQLAlchemy from gerrit
+# Clone SQLAlchemy from gerrit with retry logic
 echo -e "\n\n\nCloning SQLAlchemy from gerrit..."
 cd /
-git clone https://gerrit.sqlalchemy.org/sqlalchemy/sqlalchemy
+for attempt in 1 2 3; do
+    echo "Clone attempt $attempt..."
+    if git clone --depth 1 https://gerrit.sqlalchemy.org/sqlalchemy/sqlalchemy; then
+        break
+    fi
+    echo "Clone failed, retrying in 5s..."
+    sleep 5
+    rm -rf /sqlalchemy 2>/dev/null
+done
 
 cd /sqlalchemy
 
-# Fetch the specific review
+# Fetch the specific review with retry
 echo -e "\n\n\nFetching gerrit review 6149..."
-git fetch https://gerrit.sqlalchemy.org/sqlalchemy/sqlalchemy refs/changes/49/6149/14
+for attempt in 1 2 3; do
+    echo "Fetch attempt $attempt..."
+    if git fetch --depth 1 https://gerrit.sqlalchemy.org/sqlalchemy/sqlalchemy refs/changes/49/6149/14; then
+        break
+    fi
+    echo "Fetch failed, retrying in 5s..."
+    sleep 5
+done
 git checkout FETCH_HEAD
 
 # Install SQLAlchemy and test dependencies
@@ -116,20 +131,40 @@ pip3 install pytest greenlet typing-extensions
 echo -e "\n\n\nRunning reconnect tests to reproduce segfault..."
 echo "This will run the test suite in a loop until it crashes or completes 10 runs."
 
+# Set TEST_MODE: "reconnect" for quick segfault test, "full" for all SQLAlchemy tests
+TEST_MODE="${TEST_MODE:-reconnect}"
+
 CRASH_DETECTED=0
 for i in {1..10}; do
     echo -e "\n=== Test Run $i ==="
 
-    if ! pytest test/engine/test_reconnect.py::RealReconnectTest \
-        --dburi "mssql+mssqlpython://scott:tiger^5HHH@localhost:1433/test?Encrypt=No" \
-        --disable-asyncio -s -v 2>&1; then
-
-        echo -e "\n\n*** CRASH DETECTED ON RUN $i ***"
-        CRASH_DETECTED=1
-        break
+    if [ "$TEST_MODE" = "full" ]; then
+        # Run full SQLAlchemy test suite for mssql+mssqlpython
+        # Don't use -x (stop on first failure) - let it run all tests
+        TEST_CMD="pytest test/ \
+            --dburi 'mssql+mssqlpython://scott:tiger^5HHH@localhost:1433/test?Encrypt=No' \
+            --disable-asyncio -q"
+    else
+        # Run only reconnect tests (quick segfault reproduction)
+        TEST_CMD="pytest test/engine/test_reconnect.py::RealReconnectTest \
+            --dburi 'mssql+mssqlpython://scott:tiger^5HHH@localhost:1433/test?Encrypt=No' \
+            --disable-asyncio -s -v"
     fi
 
-    echo "Run $i completed successfully"
+    eval $TEST_CMD 2>&1
+    EXIT_CODE=$?
+    
+    # Check for segfault (signal 139 = 128 + 11 SIGSEGV)
+    if [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 134 ] || [ $EXIT_CODE -eq 136 ]; then
+        echo -e "\n\n*** SEGFAULT DETECTED ON RUN $i (exit code $EXIT_CODE) ***"
+        CRASH_DETECTED=1
+        break
+    elif [ $EXIT_CODE -ne 0 ]; then
+        echo -e "\nTest run $i had failures (exit code $EXIT_CODE) but no segfault"
+    else
+        echo "Run $i completed successfully"
+    fi
+
     sleep 1
 done
 

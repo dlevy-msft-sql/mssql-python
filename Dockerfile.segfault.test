@@ -14,7 +14,7 @@ RUN dnf install -y python3 python3-pip git gcc gcc-c++ python3-devel cmake pybin
 
 # Install mssql-python DBAPI from our fix branch (build from source for C++ extensions)
 WORKDIR /mssql-python
-RUN git clone --depth 1 -b fix/issue-341-segfault-handle-lifecycle \
+RUN git clone --depth 1 -b fix/issue-341-full-sqlalchemy-tests \
     https://github.com/dlevy-msft-sql/mssql-python.git . && \
     cd mssql_python/pybind && chmod +x build.sh && \
     PYTHON_INCLUDE_DIR=/usr/include/python3.12 \

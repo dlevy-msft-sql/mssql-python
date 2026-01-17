@@ -131,47 +131,53 @@ pip3 install pytest greenlet typing-extensions
 echo -e "\n\n\nRunning reconnect tests to reproduce segfault..."
 echo "This will run the test suite in a loop until it crashes or completes 10 runs."
 
-# Set TEST_MODE: "reconnect" for quick segfault test, "full" for all SQLAlchemy tests
+# Set TEST_MODE: "reconnect" for quick segfault test (10 runs), "full" for all SQLAlchemy tests (1 run)
 TEST_MODE="${TEST_MODE:-reconnect}"
 
-CRASH_DETECTED=0
-for i in {1..10}; do
-    echo -e "\n=== Test Run $i ==="
-
-    if [ "$TEST_MODE" = "full" ]; then
-        # Run full SQLAlchemy test suite for mssql+mssqlpython
-        # Don't use -x (stop on first failure) - let it run all tests
-        TEST_CMD="pytest test/ \
-            --dburi 'mssql+mssqlpython://scott:tiger^5HHH@localhost:1433/test?Encrypt=No' \
-            --disable-asyncio -q"
-    else
-        # Run only reconnect tests (quick segfault reproduction)
-        TEST_CMD="pytest test/engine/test_reconnect.py::RealReconnectTest \
-            --dburi 'mssql+mssqlpython://scott:tiger^5HHH@localhost:1433/test?Encrypt=No' \
-            --disable-asyncio -s -v"
-    fi
-
-    eval $TEST_CMD 2>&1
+if [ "$TEST_MODE" = "full" ]; then
+    # Run full SQLAlchemy test suite ONCE (no loop - avoids duplicate table errors)
+    echo -e "\n=== Running FULL SQLAlchemy test suite (single run) ==="
+    pytest test/ \
+        --dburi 'mssql+mssqlpython://scott:tiger^5HHH@localhost:1433/test?Encrypt=No' \
+        --disable-asyncio -q 2>&1
     EXIT_CODE=$?
     
-    # Check for segfault (signal 139 = 128 + 11 SIGSEGV)
     if [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 134 ] || [ $EXIT_CODE -eq 136 ]; then
-        echo -e "\n\n*** SEGFAULT DETECTED ON RUN $i (exit code $EXIT_CODE) ***"
-        CRASH_DETECTED=1
-        break
+        echo -e "\n\n*** SEGFAULT DETECTED (exit code $EXIT_CODE) ***"
     elif [ $EXIT_CODE -ne 0 ]; then
-        echo -e "\nTest run $i had failures (exit code $EXIT_CODE) but no segfault"
+        echo -e "\nTest suite completed with failures (exit code $EXIT_CODE) but no segfault"
     else
-        echo "Run $i completed successfully"
+        echo -e "\n*** Full test suite completed successfully! ***"
     fi
-
-    sleep 1
-done
-
-if [ $CRASH_DETECTED -eq 0 ]; then
-    echo -e "\n\n*** No crash in 10 runs. The issue is intermittent and may require more runs. ***"
 else
-    echo -e "\n\n*** Segfault reproduced! ***"
+    # Run reconnect tests 10 times to detect intermittent segfault
+    CRASH_DETECTED=0
+    for i in {1..10}; do
+        echo -e "\n=== Reconnect Test Run $i of 10 ==="
+        pytest test/engine/test_reconnect.py::RealReconnectTest \
+            --dburi 'mssql+mssqlpython://scott:tiger^5HHH@localhost:1433/test?Encrypt=No' \
+            --disable-asyncio -s -v 2>&1
+        EXIT_CODE=$?
+        
+        # Check for segfault (signal 139 = 128 + 11 SIGSEGV)
+        if [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 134 ] || [ $EXIT_CODE -eq 136 ]; then
+            echo -e "\n\n*** SEGFAULT DETECTED ON RUN $i (exit code $EXIT_CODE) ***"
+            CRASH_DETECTED=1
+            break
+        elif [ $EXIT_CODE -ne 0 ]; then
+            echo -e "\nTest run $i had failures (exit code $EXIT_CODE) but no segfault"
+        else
+            echo "Run $i completed successfully"
+        fi
+
+        sleep 1
+    done
+
+    if [ $CRASH_DETECTED -eq 0 ]; then
+        echo -e "\n\n*** SUCCESS: No segfault in 10 runs! ***"
+    else
+        echo -e "\n\n*** Segfault reproduced! ***"
+    fi
 fi
 
 # Shut down SQL Server cleanly

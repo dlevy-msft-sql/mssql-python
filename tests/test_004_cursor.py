@@ -15,7 +15,6 @@ import decimal
 from contextlib import closing
 import mssql_python
 import uuid
-import re
 from conftest import is_azure_sql_connection
 
 # Setup test table
@@ -13406,7 +13405,8 @@ def test_decimal_scientific_notation_to_varchar(cursor, db_connection, values, d
         try:
             cursor.execute(f"DROP TABLE {table_name}")
             db_connection.commit()
-        except:
+        except Exception:
+            # Best-effort cleanup of temporary test table; ignore any errors
             pass
 
 

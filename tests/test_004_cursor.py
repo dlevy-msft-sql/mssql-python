@@ -2424,20 +2424,63 @@ def test_drop_tables_for_join(cursor, db_connection):
 
 
 def test_cursor_description(cursor):
-    """Test cursor description"""
+    """Test cursor description with SQLTypeCode for backwards compatibility."""
     cursor.execute("SELECT database_id, name FROM sys.databases;")
     desc = cursor.description
 
-    # DB-API 2.0: description[i][1] contains SQL type code (integer), not Python type
     from mssql_python.constants import ConstantsDDBC as ddbc_sql_const
 
-    expected_description = [
-        ("database_id", ddbc_sql_const.SQL_INTEGER.value, None, 10, 10, 0, False),  # 4
-        ("name", ddbc_sql_const.SQL_WVARCHAR.value, None, 128, 128, 0, False),  # -9
-    ]
-    assert len(desc) == len(expected_description), "Description length mismatch"
-    for desc_item, expected in zip(desc, expected_description):
-        assert desc_item == expected, f"Description mismatch: {desc_item} != {expected}"
+    # Verify length
+    assert len(desc) == 2, "Description should have 2 columns"
+
+    # Test 1: DB-API 2.0 compliant - compare with SQL type codes (integers)
+    assert desc[0][1] == ddbc_sql_const.SQL_INTEGER.value, "database_id should be SQL_INTEGER (4)"
+    assert desc[1][1] == ddbc_sql_const.SQL_WVARCHAR.value, "name should be SQL_WVARCHAR (-9)"
+
+    # Test 2: Backwards compatible - compare with Python types (for pandas, etc.)
+    assert desc[0][1] == int, "database_id should also compare equal to Python int"
+    assert desc[1][1] == str, "name should also compare equal to Python str"
+
+    # Test 3: Can convert to int to get raw SQL code
+    assert int(desc[0][1]) == 4, "int(type_code) should return SQL_INTEGER (4)"
+    assert int(desc[1][1]) == -9, "int(type_code) should return SQL_WVARCHAR (-9)"
+
+    # Test 4: Verify other tuple elements
+    assert desc[0][0] == "database_id", "First column name should be database_id"
+    assert desc[1][0] == "name", "Second column name should be name"
+
+
+def test_cursor_description_pandas_compatibility(cursor):
+    """
+    Test that cursor.description type_code works with pandas-style type checking.
+
+    Pandas and other libraries check `cursor.description[i][1] == str` to determine
+    column types. This test ensures SQLTypeCode maintains backwards compatibility.
+    """
+    cursor.execute("SELECT database_id, name FROM sys.databases;")
+    desc = cursor.description
+
+    # Simulate what pandas does internally when reading SQL results
+    # pandas checks: if description[i][1] == str: treat as string column
+    type_map = {}
+    for col_desc in desc:
+        col_name = col_desc[0]
+        type_code = col_desc[1]
+
+        # This is how pandas-like code typically checks types
+        if type_code == str:
+            type_map[col_name] = "string"
+        elif type_code == int:
+            type_map[col_name] = "integer"
+        elif type_code == float:
+            type_map[col_name] = "float"
+        elif type_code == bytes:
+            type_map[col_name] = "bytes"
+        else:
+            type_map[col_name] = "other"
+
+    assert type_map["database_id"] == "integer", "database_id should be detected as integer"
+    assert type_map["name"] == "string", "name should be detected as string"
 
 
 def test_parse_datetime(cursor, db_connection):
@@ -14226,6 +14269,496 @@ def test_geography_complex_operations(cursor, db_connection):
 
     finally:
         cursor.execute("DROP TABLE IF EXISTS #pytest_geography_complex;")
+        db_connection.commit()
+
+
+# ==================== GEOMETRY TYPE TESTS ====================
+
+# Test geometry data - Well-Known Text (WKT) format (planar/2D coordinate system)
+GEOMETRY_POINT_WKT = "POINT(100 200)"
+GEOMETRY_LINESTRING_WKT = "LINESTRING(0 0, 100 100, 200 0)"
+GEOMETRY_POLYGON_WKT = "POLYGON((0 0, 100 0, 100 100, 0 100, 0 0))"
+GEOMETRY_MULTIPOINT_WKT = "MULTIPOINT((0 0), (100 100))"
+
+
+def test_geometry_basic_insert_fetch(cursor, db_connection):
+    """Test insert and fetch of a basic geometry Point value."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_geometry_basic (id INT PRIMARY KEY IDENTITY(1,1), geom_col GEOMETRY NULL);"
+        )
+        db_connection.commit()
+
+        # Insert using STGeomFromText (no SRID needed for geometry)
+        cursor.execute(
+            "INSERT INTO #pytest_geometry_basic (geom_col) VALUES (geometry::STGeomFromText(?, 0));",
+            GEOMETRY_POINT_WKT,
+        )
+        db_connection.commit()
+
+        # Fetch as binary (default behavior)
+        row = cursor.execute("SELECT geom_col FROM #pytest_geometry_basic;").fetchone()
+        assert row[0] is not None, "Geometry value should not be None"
+        assert isinstance(row[0], bytes), "Geometry should be returned as bytes"
+        assert len(row[0]) > 0, "Geometry binary should have content"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_geometry_basic;")
+        db_connection.commit()
+
+
+def test_geometry_as_text(cursor, db_connection):
+    """Test fetching geometry as WKT text using STAsText()."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_geometry_text (id INT PRIMARY KEY IDENTITY(1,1), geom_col GEOMETRY NULL);"
+        )
+        db_connection.commit()
+
+        cursor.execute(
+            "INSERT INTO #pytest_geometry_text (geom_col) VALUES (geometry::STGeomFromText(?, 0));",
+            GEOMETRY_POINT_WKT,
+        )
+        db_connection.commit()
+
+        # Fetch as text using STAsText()
+        row = cursor.execute(
+            "SELECT geom_col.STAsText() as wkt FROM #pytest_geometry_text;"
+        ).fetchone()
+        assert row[0] is not None, "Geometry WKT should not be None"
+        assert row[0].startswith("POINT"), "Should be a POINT geometry"
+        assert "100" in row[0] and "200" in row[0], "Should contain expected coordinates"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_geometry_text;")
+        db_connection.commit()
+
+
+def test_geometry_various_types(cursor, db_connection):
+    """Test insert and fetch of various geometry types."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_geometry_types (id INT PRIMARY KEY IDENTITY(1,1), geom_col GEOMETRY NULL, description NVARCHAR(100));"
+        )
+        db_connection.commit()
+
+        test_cases = [
+            (GEOMETRY_POINT_WKT, "Point", "POINT"),
+            (GEOMETRY_LINESTRING_WKT, "LineString", "LINESTRING"),
+            (GEOMETRY_POLYGON_WKT, "Polygon", "POLYGON"),
+            (GEOMETRY_MULTIPOINT_WKT, "MultiPoint", "MULTIPOINT"),
+        ]
+
+        for wkt, desc, _ in test_cases:
+            cursor.execute(
+                "INSERT INTO #pytest_geometry_types (geom_col, description) VALUES (geometry::STGeomFromText(?, 0), ?);",
+                (wkt, desc),
+            )
+        db_connection.commit()
+
+        # Fetch all and verify
+        rows = cursor.execute(
+            "SELECT geom_col.STAsText() as wkt, description FROM #pytest_geometry_types ORDER BY id;"
+        ).fetchall()
+
+        for i, (_, expected_desc, expected_type) in enumerate(test_cases):
+            assert rows[i][0] is not None, f"{expected_desc} WKT should not be None"
+            assert rows[i][0].startswith(
+                expected_type
+            ), f"{expected_desc} should start with {expected_type}"
+            assert rows[i][1] == expected_desc, f"Description should match"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_geometry_types;")
+        db_connection.commit()
+
+
+def test_geometry_null_value(cursor, db_connection):
+    """Test insert and fetch of NULL geometry values."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_geometry_null (id INT PRIMARY KEY IDENTITY(1,1), geom_col GEOMETRY NULL);"
+        )
+        db_connection.commit()
+
+        cursor.execute("INSERT INTO #pytest_geometry_null (geom_col) VALUES (?);", None)
+        db_connection.commit()
+
+        row = cursor.execute("SELECT geom_col FROM #pytest_geometry_null;").fetchone()
+        assert row[0] is None, "NULL geometry should be returned as None"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_geometry_null;")
+        db_connection.commit()
+
+
+def test_geometry_fetchall(cursor, db_connection):
+    """Test fetchall with geometry columns."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_geometry_fetchall (id INT PRIMARY KEY IDENTITY(1,1), geom_col GEOMETRY NULL);"
+        )
+        db_connection.commit()
+
+        # Insert multiple rows
+        num_rows = 5
+        for i in range(num_rows):
+            cursor.execute(
+                "INSERT INTO #pytest_geometry_fetchall (geom_col) VALUES (geometry::STGeomFromText(?, 0));",
+                GEOMETRY_POINT_WKT,
+            )
+        db_connection.commit()
+
+        cursor.execute("SELECT geom_col FROM #pytest_geometry_fetchall;")
+        rows = cursor.fetchall()
+        assert isinstance(rows, list), "fetchall should return a list"
+        assert len(rows) == num_rows, f"fetchall should return {num_rows} rows"
+        for row in rows:
+            assert isinstance(row[0], bytes), "Each geometry should be bytes"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_geometry_fetchall;")
+        db_connection.commit()
+
+
+def test_geometry_methods(cursor, db_connection):
+    """Test various geometry methods (STArea, STLength, STDistance)."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_geometry_methods (id INT PRIMARY KEY IDENTITY(1,1), geom_col GEOMETRY NULL);"
+        )
+        db_connection.commit()
+
+        # Insert a polygon to test area
+        cursor.execute(
+            "INSERT INTO #pytest_geometry_methods (geom_col) VALUES (geometry::STGeomFromText(?, 0));",
+            GEOMETRY_POLYGON_WKT,
+        )
+        db_connection.commit()
+
+        # Test STArea - 100x100 square = 10000 sq units
+        row = cursor.execute(
+            "SELECT geom_col.STArea() as area FROM #pytest_geometry_methods;"
+        ).fetchone()
+        assert row[0] is not None, "STArea should return a value"
+        assert row[0] == 10000, "Square should have area of 10000"
+
+        # Test STLength for linestring
+        cursor.execute(
+            "UPDATE #pytest_geometry_methods SET geom_col = geometry::STGeomFromText(?, 0);",
+            GEOMETRY_LINESTRING_WKT,
+        )
+        db_connection.commit()
+
+        row = cursor.execute(
+            "SELECT geom_col.STLength() as length FROM #pytest_geometry_methods;"
+        ).fetchone()
+        assert row[0] is not None, "STLength should return a value"
+        assert row[0] > 0, "LineString should have positive length"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_geometry_methods;")
+        db_connection.commit()
+
+
+def test_geometry_description_metadata(cursor, db_connection):
+    """Test cursor.description for geometry columns."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_geometry_desc (id INT PRIMARY KEY, geom_col GEOMETRY NULL);"
+        )
+        db_connection.commit()
+
+        cursor.execute("SELECT id, geom_col FROM #pytest_geometry_desc;")
+        desc = cursor.description
+
+        assert len(desc) == 2, "Should have 2 columns in description"
+        assert desc[0][0] == "id", "First column should be 'id'"
+        assert desc[1][0] == "geom_col", "Second column should be 'geom_col'"
+        # Geometry uses SQL_SS_UDT (-151)
+        assert int(desc[1][1]) == -151, "Geometry type should be SQL_SS_UDT (-151)"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_geometry_desc;")
+        db_connection.commit()
+
+
+def test_geometry_mixed_with_other_types(cursor, db_connection):
+    """Test geometry columns mixed with other data types."""
+    try:
+        cursor.execute(
+            """CREATE TABLE #pytest_geometry_mixed (
+                id INT PRIMARY KEY IDENTITY(1,1),
+                name NVARCHAR(100),
+                geom_col GEOMETRY NULL,
+                area FLOAT
+            );"""
+        )
+        db_connection.commit()
+
+        cursor.execute(
+            """INSERT INTO #pytest_geometry_mixed (name, geom_col, area)
+               VALUES (?, geometry::STGeomFromText(?, 0), ?);""",
+            ("Square", GEOMETRY_POLYGON_WKT, 10000.0),
+        )
+        db_connection.commit()
+
+        row = cursor.execute("SELECT name, geom_col, area FROM #pytest_geometry_mixed;").fetchone()
+        assert row[0] == "Square", "Name should match"
+        assert isinstance(row[1], bytes), "Geometry should be bytes"
+        assert row[2] == 10000.0, "Area should match"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_geometry_mixed;")
+        db_connection.commit()
+
+
+# ==================== HIERARCHYID TYPE TESTS ====================
+
+
+def test_hierarchyid_basic_insert_fetch(cursor, db_connection):
+    """Test insert and fetch of a basic hierarchyid value."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_hierarchyid_basic (id INT PRIMARY KEY IDENTITY(1,1), node HIERARCHYID NULL);"
+        )
+        db_connection.commit()
+
+        # Insert using hierarchyid::Parse
+        cursor.execute(
+            "INSERT INTO #pytest_hierarchyid_basic (node) VALUES (hierarchyid::Parse(?));",
+            "/1/2/3/",
+        )
+        db_connection.commit()
+
+        # Fetch as binary (default behavior)
+        row = cursor.execute("SELECT node FROM #pytest_hierarchyid_basic;").fetchone()
+        assert row[0] is not None, "Hierarchyid value should not be None"
+        assert isinstance(row[0], bytes), "Hierarchyid should be returned as bytes"
+        assert len(row[0]) > 0, "Hierarchyid binary should have content"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_hierarchyid_basic;")
+        db_connection.commit()
+
+
+def test_hierarchyid_as_string(cursor, db_connection):
+    """Test fetching hierarchyid as string using ToString()."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_hierarchyid_string (id INT PRIMARY KEY IDENTITY(1,1), node HIERARCHYID NULL);"
+        )
+        db_connection.commit()
+
+        cursor.execute(
+            "INSERT INTO #pytest_hierarchyid_string (node) VALUES (hierarchyid::Parse(?));",
+            "/1/2/3/",
+        )
+        db_connection.commit()
+
+        # Fetch as string using ToString()
+        row = cursor.execute(
+            "SELECT node.ToString() as path FROM #pytest_hierarchyid_string;"
+        ).fetchone()
+        assert row[0] is not None, "Hierarchyid string should not be None"
+        assert row[0] == "/1/2/3/", "Hierarchyid path should match"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_hierarchyid_string;")
+        db_connection.commit()
+
+
+def test_hierarchyid_null_value(cursor, db_connection):
+    """Test insert and fetch of NULL hierarchyid values."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_hierarchyid_null (id INT PRIMARY KEY IDENTITY(1,1), node HIERARCHYID NULL);"
+        )
+        db_connection.commit()
+
+        cursor.execute("INSERT INTO #pytest_hierarchyid_null (node) VALUES (?);", None)
+        db_connection.commit()
+
+        row = cursor.execute("SELECT node FROM #pytest_hierarchyid_null;").fetchone()
+        assert row[0] is None, "NULL hierarchyid should be returned as None"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_hierarchyid_null;")
+        db_connection.commit()
+
+
+def test_hierarchyid_fetchall(cursor, db_connection):
+    """Test fetchall with hierarchyid columns."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_hierarchyid_fetchall (id INT PRIMARY KEY IDENTITY(1,1), node HIERARCHYID NULL);"
+        )
+        db_connection.commit()
+
+        # Insert multiple rows with different hierarchy levels
+        paths = ["/1/", "/1/1/", "/1/2/", "/2/", "/2/1/"]
+        for path in paths:
+            cursor.execute(
+                "INSERT INTO #pytest_hierarchyid_fetchall (node) VALUES (hierarchyid::Parse(?));",
+                path,
+            )
+        db_connection.commit()
+
+        cursor.execute("SELECT node FROM #pytest_hierarchyid_fetchall;")
+        rows = cursor.fetchall()
+        assert isinstance(rows, list), "fetchall should return a list"
+        assert len(rows) == len(paths), f"fetchall should return {len(paths)} rows"
+        for row in rows:
+            assert isinstance(row[0], bytes), "Each hierarchyid should be bytes"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_hierarchyid_fetchall;")
+        db_connection.commit()
+
+
+def test_hierarchyid_methods(cursor, db_connection):
+    """Test various hierarchyid methods (GetLevel, GetAncestor, IsDescendantOf)."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_hierarchyid_methods (id INT PRIMARY KEY IDENTITY(1,1), node HIERARCHYID NULL);"
+        )
+        db_connection.commit()
+
+        cursor.execute(
+            "INSERT INTO #pytest_hierarchyid_methods (node) VALUES (hierarchyid::Parse(?));",
+            "/1/2/3/",
+        )
+        db_connection.commit()
+
+        # Test GetLevel - /1/2/3/ is at level 3
+        row = cursor.execute(
+            "SELECT node.GetLevel() as level FROM #pytest_hierarchyid_methods;"
+        ).fetchone()
+        assert row[0] == 3, "Level should be 3"
+
+        # Test GetAncestor - parent of /1/2/3/ is /1/2/
+        row = cursor.execute(
+            "SELECT node.GetAncestor(1).ToString() as parent FROM #pytest_hierarchyid_methods;"
+        ).fetchone()
+        assert row[0] == "/1/2/", "Parent should be /1/2/"
+
+        # Test IsDescendantOf
+        row = cursor.execute(
+            "SELECT node.IsDescendantOf(hierarchyid::Parse('/1/')) as is_descendant FROM #pytest_hierarchyid_methods;"
+        ).fetchone()
+        assert row[0] == 1, "Node should be descendant of /1/"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_hierarchyid_methods;")
+        db_connection.commit()
+
+
+def test_hierarchyid_description_metadata(cursor, db_connection):
+    """Test cursor.description for hierarchyid columns."""
+    try:
+        cursor.execute(
+            "CREATE TABLE #pytest_hierarchyid_desc (id INT PRIMARY KEY, node HIERARCHYID NULL);"
+        )
+        db_connection.commit()
+
+        cursor.execute("SELECT id, node FROM #pytest_hierarchyid_desc;")
+        desc = cursor.description
+
+        assert len(desc) == 2, "Should have 2 columns in description"
+        assert desc[0][0] == "id", "First column should be 'id'"
+        assert desc[1][0] == "node", "Second column should be 'node'"
+        # Hierarchyid uses SQL_SS_UDT (-151)
+        assert int(desc[1][1]) == -151, "Hierarchyid type should be SQL_SS_UDT (-151)"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_hierarchyid_desc;")
+        db_connection.commit()
+
+
+def test_hierarchyid_tree_structure(cursor, db_connection):
+    """Test hierarchyid with a typical org chart tree structure."""
+    try:
+        cursor.execute(
+            """CREATE TABLE #pytest_hierarchyid_tree (
+                id INT PRIMARY KEY IDENTITY(1,1),
+                name NVARCHAR(100),
+                node HIERARCHYID NULL
+            );"""
+        )
+        db_connection.commit()
+
+        # Build an org chart
+        org_data = [
+            ("CEO", "/"),
+            ("VP Engineering", "/1/"),
+            ("VP Sales", "/2/"),
+            ("Dev Manager", "/1/1/"),
+            ("QA Manager", "/1/2/"),
+            ("Senior Dev", "/1/1/1/"),
+            ("Junior Dev", "/1/1/2/"),
+        ]
+
+        for name, path in org_data:
+            cursor.execute(
+                "INSERT INTO #pytest_hierarchyid_tree (name, node) VALUES (?, hierarchyid::Parse(?));",
+                (name, path),
+            )
+        db_connection.commit()
+
+        # Query all descendants of VP Engineering
+        rows = cursor.execute(
+            """SELECT name, node.ToString() as path 
+               FROM #pytest_hierarchyid_tree 
+               WHERE node.IsDescendantOf(hierarchyid::Parse('/1/')) = 1
+               ORDER BY node;"""
+        ).fetchall()
+
+        assert len(rows) == 5, "Should have 5 employees under VP Engineering (including self)"
+        assert rows[0][0] == "VP Engineering", "First should be VP Engineering"
+
+        # Query direct reports of Dev Manager
+        rows = cursor.execute(
+            """SELECT name, node.ToString() as path 
+               FROM #pytest_hierarchyid_tree 
+               WHERE node.GetAncestor(1) = hierarchyid::Parse('/1/1/')
+               ORDER BY node;"""
+        ).fetchall()
+
+        assert len(rows) == 2, "Dev Manager should have 2 direct reports"
+        names = [r[0] for r in rows]
+        assert "Senior Dev" in names and "Junior Dev" in names
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_hierarchyid_tree;")
+        db_connection.commit()
+
+
+def test_hierarchyid_mixed_with_other_types(cursor, db_connection):
+    """Test hierarchyid columns mixed with other data types."""
+    try:
+        cursor.execute(
+            """CREATE TABLE #pytest_hierarchyid_mixed (
+                id INT PRIMARY KEY IDENTITY(1,1),
+                name NVARCHAR(100),
+                node HIERARCHYID NULL,
+                salary DECIMAL(10,2)
+            );"""
+        )
+        db_connection.commit()
+
+        cursor.execute(
+            "INSERT INTO #pytest_hierarchyid_mixed (name, node, salary) VALUES (?, hierarchyid::Parse(?), ?);",
+            ("Manager", "/1/", 75000.00),
+        )
+        db_connection.commit()
+
+        row = cursor.execute("SELECT name, node, salary FROM #pytest_hierarchyid_mixed;").fetchone()
+        assert row[0] == "Manager", "Name should match"
+        assert isinstance(row[1], bytes), "Hierarchyid should be bytes"
+        assert float(row[2]) == 75000.00, "Salary should match"
+
+    finally:
+        cursor.execute("DROP TABLE IF EXISTS #pytest_hierarchyid_mixed;")
         db_connection.commit()
 
 

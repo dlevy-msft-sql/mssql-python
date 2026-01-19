@@ -16,7 +16,6 @@ import uuid
 import datetime
 import warnings
 from typing import List, Union, Any, Optional, Tuple, Sequence, TYPE_CHECKING
-import xml
 from mssql_python.constants import ConstantsDDBC as ddbc_sql_const, SQLTypes
 from mssql_python.helpers import check_error
 from mssql_python.logging import logger
@@ -47,6 +46,102 @@ SMALLMONEY_MIN: decimal.Decimal = decimal.Decimal("-214748.3648")
 SMALLMONEY_MAX: decimal.Decimal = decimal.Decimal("214748.3647")
 MONEY_MIN: decimal.Decimal = decimal.Decimal("-922337203685477.5808")
 MONEY_MAX: decimal.Decimal = decimal.Decimal("922337203685477.5807")
+
+
+class SQLTypeCode:
+    """
+    A dual-compatible type code that compares equal to both SQL type integers and Python types.
+
+    This class maintains backwards compatibility with code that checks
+    `cursor.description[i][1] == str` while also supporting DB-API 2.0
+    compliant code that checks `cursor.description[i][1] == -9`.
+
+    Examples:
+        >>> type_code = SQLTypeCode(-9, str)
+        >>> type_code == str  # Backwards compatible with pandas, etc.
+        True
+        >>> type_code == -9   # DB-API 2.0 compliant
+        True
+        >>> int(type_code)    # Get the raw SQL type code
+        -9
+    """
+
+    # SQL type code to Python type mapping (class-level cache)
+    _type_map = None
+
+    def __init__(self, type_code: int, python_type: type = None):
+        self.type_code = type_code
+        # If python_type not provided, look it up from the mapping
+        if python_type is None:
+            python_type = self._get_python_type(type_code)
+        self.python_type = python_type
+
+    @classmethod
+    def _get_type_map(cls):
+        """Lazily build the SQL to Python type mapping."""
+        if cls._type_map is None:
+            cls._type_map = {
+                ddbc_sql_const.SQL_CHAR.value: str,
+                ddbc_sql_const.SQL_VARCHAR.value: str,
+                ddbc_sql_const.SQL_LONGVARCHAR.value: str,
+                ddbc_sql_const.SQL_WCHAR.value: str,
+                ddbc_sql_const.SQL_WVARCHAR.value: str,
+                ddbc_sql_const.SQL_WLONGVARCHAR.value: str,
+                ddbc_sql_const.SQL_INTEGER.value: int,
+                ddbc_sql_const.SQL_REAL.value: float,
+                ddbc_sql_const.SQL_FLOAT.value: float,
+                ddbc_sql_const.SQL_DOUBLE.value: float,
+                ddbc_sql_const.SQL_DECIMAL.value: decimal.Decimal,
+                ddbc_sql_const.SQL_NUMERIC.value: decimal.Decimal,
+                ddbc_sql_const.SQL_DATE.value: datetime.date,
+                ddbc_sql_const.SQL_TIMESTAMP.value: datetime.datetime,
+                ddbc_sql_const.SQL_TIME.value: datetime.time,
+                ddbc_sql_const.SQL_BIT.value: bool,
+                ddbc_sql_const.SQL_TINYINT.value: int,
+                ddbc_sql_const.SQL_SMALLINT.value: int,
+                ddbc_sql_const.SQL_BIGINT.value: int,
+                ddbc_sql_const.SQL_BINARY.value: bytes,
+                ddbc_sql_const.SQL_VARBINARY.value: bytes,
+                ddbc_sql_const.SQL_LONGVARBINARY.value: bytes,
+                ddbc_sql_const.SQL_GUID.value: uuid.UUID,
+                ddbc_sql_const.SQL_SS_UDT.value: bytes,
+                ddbc_sql_const.SQL_XML.value: str,
+                ddbc_sql_const.SQL_DATETIME2.value: datetime.datetime,
+                ddbc_sql_const.SQL_SMALLDATETIME.value: datetime.datetime,
+                ddbc_sql_const.SQL_DATETIMEOFFSET.value: datetime.datetime,
+            }
+        return cls._type_map
+
+    @classmethod
+    def _get_python_type(cls, sql_code: int) -> type:
+        """Get the Python type for a SQL type code."""
+        return cls._get_type_map().get(sql_code, str)
+
+    def __eq__(self, other):
+        """Compare equal to both Python types and SQL integer codes."""
+        if isinstance(other, type):
+            return self.python_type == other
+        if isinstance(other, int):
+            return self.type_code == other
+        if isinstance(other, SQLTypeCode):
+            return self.type_code == other.type_code
+        return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return hash(self.type_code)
+
+    def __int__(self):
+        return self.type_code
+
+    def __repr__(self):
+        type_name = self.python_type.__name__ if self.python_type else "Unknown"
+        return f"SQLTypeCode({self.type_code}, {type_name})"
+
+    def __str__(self):
+        return str(self.type_code)
 
 
 class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-methods
@@ -760,6 +855,7 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             self.hstmt = None
             logger.debug("SQLFreeHandle succeeded")
         self._clear_rownumber()
+        self._column_metadata = None  # Clear metadata to prevent memory leaks
         self.closed = True
 
     def _check_closed(self) -> None:
@@ -962,10 +1058,13 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
                 column_name = column_name.lower()
 
             # Add to description tuple (7 elements as per PEP-249)
+            # Use SQLTypeCode for backwards-compatible type_code that works with both
+            # `desc[1] == str` (pandas) and `desc[1] == -9` (DB-API 2.0)
+            sql_type = col["DataType"]
             description.append(
                 (
                     column_name,  # name
-                    col["DataType"],  # type_code (SQL type integer) - CHANGED THIS LINE
+                    SQLTypeCode(sql_type),  # type_code - dual compatible
                     None,  # display_size
                     col["ColumnSize"],  # internal_size
                     col["ColumnSize"],  # precision - should match ColumnSize

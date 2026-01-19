@@ -3551,6 +3551,7 @@ SQLRETURN SQLBindColums(SQLHSTMT hStmt, ColumnBuffers& buffers, py::list& column
             case SQL_BINARY:
             case SQL_VARBINARY:
             case SQL_LONGVARBINARY:
+            case SQL_SS_UDT:  // geography, geometry, hierarchyid
                 // TODO: handle variable length data correctly. This logic wont
                 // suffice
                 HandleZeroColumnSizeAtFetch(columnSize);
@@ -3681,6 +3682,7 @@ SQLRETURN FetchBatchData(SQLHSTMT hStmt, ColumnBuffers& buffers, py::list& colum
             case SQL_BINARY:
             case SQL_VARBINARY:
             case SQL_LONGVARBINARY:
+            case SQL_SS_UDT:  // geography, geometry, hierarchyid
                 columnProcessors[col] = ColumnProcessors::ProcessBinary;
                 break;
             default:

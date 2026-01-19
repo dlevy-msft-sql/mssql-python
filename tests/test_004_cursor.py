@@ -13402,12 +13402,8 @@ def test_decimal_scientific_notation_to_varchar(cursor, db_connection, values, d
             ), f"{description}: Row {i} mismatch - expected {expected_val}, got {stored_val}"
 
     finally:
-        try:
-            cursor.execute(f"DROP TABLE {table_name}")
-            db_connection.commit()
-        except Exception:
-            # Best-effort cleanup of temporary test table; ignore any errors
-            pass
+        cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+        db_connection.commit()
 
 
 SMALL_XML = "<root><item>1</item></root>"
@@ -15001,7 +14997,9 @@ def test_row_output_converter_general_exception(cursor, db_connection):
 
         # Create a custom output converter that will raise a general exception
         def failing_converter(value):
-            # Output converters receive UTF-16LE encoded bytes for string values
+            # This driver passes string values as UTF-16LE encoded bytes to output
+            # converters. For other column types or connection settings, the
+            # encoding may differ.
             if value == b"t\x00e\x00s\x00t\x00_\x00v\x00a\x00l\x00u\x00e\x00":
                 raise RuntimeError("Custom converter error for testing")
             return value

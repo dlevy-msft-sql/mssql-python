@@ -503,5 +503,3 @@ _ALLOWED_CONNECTION_STRING_PARAMS = {
     # internally.
     "packetsize": "PacketSize",
 }
-
-# (Function removed; no replacement needed)

@@ -1128,46 +1128,6 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         return column_map, converter_map
 
-    def _map_data_type(self, sql_type):
-        """
-        Map SQL data type to Python data type.
-
-        Args:
-            sql_type: SQL data type.
-
-        Returns:
-            Corresponding Python data type.
-        """
-        sql_to_python_type = {
-            ddbc_sql_const.SQL_INTEGER.value: int,
-            ddbc_sql_const.SQL_VARCHAR.value: str,
-            ddbc_sql_const.SQL_WVARCHAR.value: str,
-            ddbc_sql_const.SQL_CHAR.value: str,
-            ddbc_sql_const.SQL_WCHAR.value: str,
-            ddbc_sql_const.SQL_FLOAT.value: float,
-            ddbc_sql_const.SQL_DOUBLE.value: float,
-            ddbc_sql_const.SQL_DECIMAL.value: decimal.Decimal,
-            ddbc_sql_const.SQL_NUMERIC.value: decimal.Decimal,
-            ddbc_sql_const.SQL_DATE.value: datetime.date,
-            ddbc_sql_const.SQL_TIMESTAMP.value: datetime.datetime,
-            ddbc_sql_const.SQL_TIME.value: datetime.time,
-            ddbc_sql_const.SQL_BIT.value: bool,
-            ddbc_sql_const.SQL_TINYINT.value: int,
-            ddbc_sql_const.SQL_SMALLINT.value: int,
-            ddbc_sql_const.SQL_BIGINT.value: int,
-            ddbc_sql_const.SQL_BINARY.value: bytes,
-            ddbc_sql_const.SQL_VARBINARY.value: bytes,
-            ddbc_sql_const.SQL_LONGVARBINARY.value: bytes,
-            ddbc_sql_const.SQL_GUID.value: uuid.UUID,
-            ddbc_sql_const.SQL_SS_UDT.value: bytes,  # UDTs mapped to bytes
-            ddbc_sql_const.SQL_XML.value: str,  # XML mapped to str
-            ddbc_sql_const.SQL_DATETIME2.value: datetime.datetime,
-            ddbc_sql_const.SQL_SMALLDATETIME.value: datetime.datetime,
-            ddbc_sql_const.SQL_DATETIMEOFFSET.value: datetime.datetime,
-            # Add more mappings as needed
-        }
-        return sql_to_python_type.get(sql_type, str)
-
     @property
     def rownumber(self) -> int:
         """

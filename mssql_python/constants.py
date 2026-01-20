@@ -114,6 +114,8 @@ class ConstantsDDBC(Enum):
     SQL_FETCH_ABSOLUTE = 5
     SQL_FETCH_RELATIVE = 6
     SQL_FETCH_BOOKMARK = 8
+    # NOTE: The following SQL Server-specific type constants MUST stay in sync with
+    # the corresponding values in mssql_python/pybind/ddbc_bindings.cpp
     SQL_DATETIMEOFFSET = -155
     SQL_SS_TIME2 = -154  # SQL Server TIME(n) type
     SQL_SS_UDT = -151  # SQL Server User-Defined Types (geometry, geography, hierarchyid)

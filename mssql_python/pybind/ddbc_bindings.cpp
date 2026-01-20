@@ -31,6 +31,10 @@
 #define SQL_DATETIME2 (42)
 #define SQL_SMALLDATETIME (58)
 
+// NOTE: The following SQL Server-specific type constants MUST stay in sync with
+// the corresponding values in mssql_python/constants.py (ConstantsDDBC enum):
+// SQL_SS_TIME2, SQL_SS_XML, SQL_SS_UDT, SQL_DATETIME2, SQL_SMALLDATETIME, SQL_DATETIMEOFFSET
+
 #define STRINGIFY_FOR_CASE(x)                                                                      \
     case x:                                                                                        \
         return #x

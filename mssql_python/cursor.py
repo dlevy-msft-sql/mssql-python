@@ -96,6 +96,7 @@ class SQLTypeCode:
                 ddbc_sql_const.SQL_DATE.value: datetime.date,
                 ddbc_sql_const.SQL_TIMESTAMP.value: datetime.datetime,
                 ddbc_sql_const.SQL_TIME.value: datetime.time,
+                ddbc_sql_const.SQL_SS_TIME2.value: datetime.time,  # SQL Server TIME(n)
                 ddbc_sql_const.SQL_BIT.value: bool,
                 ddbc_sql_const.SQL_TINYINT.value: int,
                 ddbc_sql_const.SQL_SMALLINT.value: int,
@@ -105,7 +106,7 @@ class SQLTypeCode:
                 ddbc_sql_const.SQL_LONGVARBINARY.value: bytes,
                 ddbc_sql_const.SQL_GUID.value: uuid.UUID,
                 ddbc_sql_const.SQL_SS_UDT.value: bytes,
-                ddbc_sql_const.SQL_XML.value: str,
+                ddbc_sql_const.SQL_SS_XML.value: str,  # SQL Server XML type (-152)
                 ddbc_sql_const.SQL_DATETIME2.value: datetime.datetime,
                 ddbc_sql_const.SQL_SMALLDATETIME.value: datetime.datetime,
                 ddbc_sql_const.SQL_DATETIMEOFFSET.value: datetime.datetime,

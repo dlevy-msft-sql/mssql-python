@@ -186,6 +186,8 @@ mssql_python/
 ├── type.py                        # DB API 2.0 type objects
 ├── constants.py                   # ODBC constants
 ├── helpers.py                     # Utility functions and settings
+├── ddbc_bindings.py               # Platform-specific extension loader with architecture detection
+├── mssql_python.pyi               # Type stubs for IDE support
 └── pybind/                        # Native extension source
     ├── ddbc_bindings.cpp          # Main C++ binding code
     ├── CMakeLists.txt             # Cross-platform build configuration

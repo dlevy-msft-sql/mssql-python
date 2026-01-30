@@ -10,6 +10,24 @@
 - **Python Versions**: 3.10+
 - **Key Dependencies**: pybind11, azure-identity, Microsoft ODBC Driver 18
 
+## Development Workflows
+
+This repository includes detailed prompt files for common tasks. Reference these with `#`:
+
+| Task | Prompt | When to Use |
+|------|--------|-------------|
+| First-time setup | `#setup-dev-env` | New machine, fresh clone |
+| Build C++ extension | `#build-ddbc` | After modifying .cpp/.h files |
+| Run tests | `#run-tests` | Validating changes |
+| Create PR | `#create-pr` | Ready to submit changes |
+
+**Workflow order for new contributors:**
+1. `#setup-dev-env` → Set up venv and dependencies
+2. `#build-ddbc` → Build native extension
+3. Make your changes
+4. `#run-tests` → Validate
+5. `#create-pr` → Submit
+
 ## Usage Examples (For Suggesting to Users)
 
 ### Basic Connection and Query
@@ -68,11 +86,13 @@ conn.commit()
 
 ### Transaction Handling
 ```python
+from mssql_python import DatabaseError
+
 try:
     cursor.execute("UPDATE accounts SET balance = balance - 100 WHERE id = ?", (from_id,))
     cursor.execute("UPDATE accounts SET balance = balance + 100 WHERE id = ?", (to_id,))
     conn.commit()
-except Exception:
+except DatabaseError:
     conn.rollback()
     raise
 ```
@@ -233,6 +253,55 @@ The `ddbc_bindings.py` module implements sophisticated architecture detection:
 - **Windows**: Normalizes `win64/amd64/x64` → `x64`, `win32/x86` → `x86`, `arm64` → `arm64`
 - **macOS**: Runtime architecture detection, always loads from universal2 binary
 - **Linux**: Maps `x64/amd64` → `x86_64`, `arm64/aarch64` → `arm64`
+
+## Exception Hierarchy
+
+Critical for error handling guidance:
+
+```
+Error (base)
+├── DatabaseError
+│   ├── InterfaceError      # Driver/interface issues
+│   ├── OperationalError    # Connection/timeout issues
+│   ├── IntegrityError      # Constraint violations
+│   ├── ProgrammingError    # SQL syntax errors
+│   └── DataError           # Invalid data processing
+└── Warning
+```
+
+## Critical Anti-Patterns (DO NOT)
+
+- **NEVER** hardcode connection strings - always use `DB_CONNECTION_STRING` env var for tests
+- **NEVER** use `pyodbc` imports - this driver doesn't require external ODBC
+- **NEVER** modify files in `mssql_python/libs/` - these are pre-built binaries
+- **NEVER** skip `conn.commit()` after INSERT/UPDATE/DELETE operations
+- **NEVER** use bare `except:` blocks - always catch specific exceptions
+- **NEVER** leave connections open - use context managers or explicit `close()`
+
+## When Modifying Code
+
+### Python Changes
+- Preserve existing error handling patterns from `exceptions.py`
+- Use context managers (`with`) for all connection/cursor operations
+- Update `__all__` exports if adding public API
+- Add corresponding test in `tests/test_*.py`
+- Follow Black formatting (line length 100)
+
+### C++ Changes
+- Follow RAII patterns for resource management
+- Use `py::gil_scoped_release` for blocking ODBC operations
+- Update `mssql_python.pyi` type stubs if changing Python API
+- Follow `.clang-format` style (Google style, 100 column limit)
+
+## Debugging Quick Reference
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `ImportError: ddbc_bindings` | Extension not built | Run `#build-ddbc` |
+| Connection timeout | Missing env var | Set `DB_CONNECTION_STRING` |
+| `dylib not found` (macOS) | Library paths | Run `configure_dylibs.sh` |
+| `ODBC Driver not found` | Missing driver | Install Microsoft ODBC Driver 18 |
+| `ModuleNotFoundError` | Not in venv | Run `#setup-dev-env` |
 
 ## Contributing Guidelines
 

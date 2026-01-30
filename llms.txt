@@ -52,6 +52,8 @@ sudo ACCEPT_EULA=Y zypper install -y msodbcsql18
 
 ## Quick Start
 
+> **Security Note**: The examples below use `TrustServerCertificate=yes` for local development with self-signed certificates. For production or remote connections, remove this option to ensure proper TLS certificate validation.
+
 ```python
 import mssql_python
 
@@ -295,7 +297,7 @@ conn = mssql_python.connect("SERVER=...;DATABASE=...")
 
 - Windows (x64, ARM64)
 - macOS (ARM64, x86_64)
-- Linux: Debian, Ubuntu, RHEL, SUSE (x64), Alpine (musl)
+- Linux (x86_64, ARM64): Debian, Ubuntu, RHEL, SUSE, Alpine (musl)
 
 ## Supported Python Versions
 

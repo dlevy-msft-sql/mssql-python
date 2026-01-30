@@ -30,6 +30,8 @@ This repository includes detailed prompt files for common tasks. Reference these
 
 ## Usage Examples (For Suggesting to Users)
 
+> **Security Note**: Examples use `TrustServerCertificate=yes` for local development with self-signed certificates. For production, remove this option to ensure proper TLS certificate validation.
+
 ### Basic Connection and Query
 ```python
 import mssql_python
@@ -259,14 +261,17 @@ The `ddbc_bindings.py` module implements sophisticated architecture detection:
 Critical for error handling guidance:
 
 ```
-Error (base)
-├── DatabaseError
-│   ├── InterfaceError      # Driver/interface issues
-│   ├── OperationalError    # Connection/timeout issues
-│   ├── IntegrityError      # Constraint violations
-│   ├── ProgrammingError    # SQL syntax errors
-│   └── DataError           # Invalid data processing
-└── Warning
+Exception (base)
+├── Warning
+└── Error
+    ├── InterfaceError          # Driver/interface issues
+    └── DatabaseError
+        ├── DataError            # Invalid data processing
+        ├── OperationalError     # Connection/timeout issues
+        ├── IntegrityError       # Constraint violations
+        ├── InternalError        # Internal driver/database errors
+        ├── ProgrammingError     # SQL syntax errors
+        └── NotSupportedError    # Unsupported features/operations
 ```
 
 ## Critical Anti-Patterns (DO NOT)

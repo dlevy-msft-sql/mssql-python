@@ -10,6 +10,46 @@ mssql-python is the official Microsoft Python driver for SQL Server and Azure SQ
 pip install mssql-python
 ```
 
+Or using uv (recommended for faster installs):
+```bash
+uv pip install mssql-python
+```
+
+### Platform-Specific Dependencies
+
+**macOS** - Install the ODBC driver:
+```bash
+brew install msodbcsql18
+```
+
+**Debian/Ubuntu**:
+```bash
+curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+curl https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+sudo apt-get update
+sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
+```
+
+**RHEL/CentOS/Fedora**:
+```bash
+curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+curl https://packages.microsoft.com/config/rhel/$(rpm -E %rhel)/prod.repo | sudo tee /etc/yum.repos.d/mssql-release.repo
+sudo ACCEPT_EULA=Y yum install -y msodbcsql18
+```
+
+**Alpine Linux**:
+```bash
+apk add --no-cache curl gnupg
+curl -O https://download.microsoft.com/download/1/f/f/1fffeb70-cd3d-42d5-a7ee-b75c4ff5fb9e/msodbcsql18_18.4.1.1-1_amd64.apk
+apk add --allow-untrusted msodbcsql18_18.4.1.1-1_amd64.apk
+```
+
+**SUSE Linux**:
+```bash
+sudo zypper addrepo https://packages.microsoft.com/config/sles/15/prod.repo
+sudo ACCEPT_EULA=Y zypper install -y msodbcsql18
+```
+
 ## Quick Start
 
 ```python

@@ -939,6 +939,7 @@ class Connection:
             sqltype (int): The integer SQL type value to convert, which can be one of the
                           defined standard constants (e.g. SQL_VARCHAR) or a database-specific
                           value (e.g. -151 for the SQL Server 2008 geometry data type).
+                          Also accepts SQLTypeCode objects (from cursor.description).
             func (callable): The converter function which will be called with a single parameter,
                             the value, and should return the converted value. If the value is NULL
                             then the parameter passed to the function will be None, otherwise it
@@ -947,6 +948,9 @@ class Connection:
         Returns:
             None
         """
+        # Handle SQLTypeCode objects (from cursor.description) by converting to int
+        if hasattr(sqltype, "type_code"):
+            sqltype = sqltype.type_code
         with self._converters_lock:
             self._output_converters[sqltype] = func
             # Pass to the underlying connection if native implementation supports it
@@ -961,7 +965,9 @@ class Connection:
         Thread-safe implementation that protects the converters dictionary with a lock.
 
         Args:
-            sqltype (int or type): The SQL type value or Python type to get the converter for
+            sqltype (int or type): The SQL type value or Python type to get the converter for.
+                Also accepts SQLTypeCode objects (from cursor.description), which are
+                automatically converted to their integer type code.
 
         Returns:
             callable or None: The converter function or None if no converter is registered
@@ -970,6 +976,10 @@ class Connection:
             ⚠️ The returned converter function will be executed on database values. Only use
             converters from trusted sources.
         """
+        # Handle SQLTypeCode objects (from cursor.description) by converting to int
+        # SQLTypeCode has a type_code attribute and supports int() conversion
+        if hasattr(sqltype, "type_code"):
+            sqltype = sqltype.type_code
         with self._converters_lock:
             return self._output_converters.get(sqltype)
 
@@ -980,11 +990,15 @@ class Connection:
         Thread-safe implementation that protects the converters dictionary with a lock.
 
         Args:
-            sqltype (int or type): The SQL type value to remove the converter for
+            sqltype (int or type): The SQL type value to remove the converter for.
+                Also accepts SQLTypeCode objects (from cursor.description).
 
         Returns:
             None
         """
+        # Handle SQLTypeCode objects (from cursor.description) by converting to int
+        if hasattr(sqltype, "type_code"):
+            sqltype = sqltype.type_code
         with self._converters_lock:
             if sqltype in self._output_converters:
                 del self._output_converters[sqltype]

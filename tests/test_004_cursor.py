@@ -13807,7 +13807,7 @@ def test_xml_malformed_input(cursor, db_connection):
         )
         db_connection.commit()
 
-        with pytest.raises(Exception):
+        with pytest.raises(mssql_python.Error):
             cursor.execute("INSERT INTO #pytest_xml_invalid (xml_col) VALUES (?);", INVALID_XML)
     finally:
         cursor.execute("DROP TABLE IF EXISTS #pytest_xml_invalid;")

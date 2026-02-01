@@ -1448,6 +1448,7 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         except Exception as e:  # pylint: disable=broad-exception-caught
             # If describe fails, it's likely there are no results (e.g., for INSERT)
             self.description = None
+            self._column_metadata = None  # Clear metadata to prevent stale data
 
         # Reset rownumber for new result set (only for SELECT statements)
         if self.description:  # If we have column descriptions, it's likely a SELECT
@@ -1472,6 +1473,7 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         except Exception as e:
             # If describe fails, it's likely there are no results (e.g., for INSERT)
             self.description = None
+            self._column_metadata = None  # Clear metadata to prevent stale data
 
         self._reset_inputsizes()  # Reset input sizes after execution
         # Return self for method chaining
@@ -2504,6 +2506,7 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             logger.debug("nextset: No more result sets available")
             self._clear_rownumber()
             self.description = None
+            self._column_metadata = None  # Clear metadata to prevent stale data
             return False
 
         self._reset_rownumber()
@@ -2523,6 +2526,7 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         except Exception as e:  # pylint: disable=broad-exception-caught
             # If describe fails, there might be no results in this result set
             self.description = None
+            self._column_metadata = None  # Clear metadata to prevent stale data
 
         logger.debug(
             "nextset: Moved to next result set - column_count=%d",

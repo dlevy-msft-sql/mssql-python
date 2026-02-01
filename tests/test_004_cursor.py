@@ -14781,6 +14781,10 @@ def test_column_metadata_thread_safety_concurrent_cursors(db_connection, conn_st
     for t in threads:
         t.join(timeout=30)  # 30 second timeout per thread
 
+    # Verify threads actually finished (not just timed out)
+    hung_threads = [t for t in threads if t.is_alive()]
+    assert len(hung_threads) == 0, f"{len(hung_threads)} thread(s) still running after timeout"
+
     # Verify no errors occurred
     assert len(errors) == 0, f"Thread errors occurred: {errors}"
 
@@ -15356,9 +15360,8 @@ def test_row_output_converter_general_exception(cursor, db_connection):
         # Create a custom output converter that will raise a general exception
         def failing_converter(value):
             # This driver passes string values as UTF-16LE encoded bytes to output
-            # converters. For other column types or connection settings, the
-            # encoding may differ.
-            if value == b"t\x00e\x00s\x00t\x00_\x00v\x00a\x00l\x00u\x00e\x00":
+            # converters. This test uses the same encoding for the comparison.
+            if value == "test_value".encode("utf-16-le"):
                 raise RuntimeError("Custom converter error for testing")
             return value
 

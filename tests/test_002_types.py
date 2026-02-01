@@ -1350,18 +1350,16 @@ class TestSQLTypeCode:
         tc2 = SQLTypeCode(4)
         assert int(tc2) == 4, "int(SQLTypeCode(4)) should return 4"
 
-    def test_sqltypecode_hash(self):
-        """Test SQLTypeCode is hashable (for use in dicts/sets)."""
+    def test_sqltypecode_unhashable(self):
+        """Test SQLTypeCode is intentionally unhashable due to eq/hash contract."""
         from mssql_python import SQLTypeCode
+        import pytest
 
-        tc1 = SQLTypeCode(4)
-        tc2 = SQLTypeCode(4)
-        tc3 = SQLTypeCode(-9)
-        # Same code should have same hash
-        assert hash(tc1) == hash(tc2)
-        # Different codes may have different hashes (not guaranteed but typical)
-        s = {tc1, tc3}
-        assert len(s) == 2
+        tc = SQLTypeCode(4)
+        # SQLTypeCode should not be hashable because __eq__ compares to both
+        # Python types and integers, which have different hash values
+        with pytest.raises(TypeError):
+            hash(tc)
 
     def test_sqltypecode_repr(self):
         """Test SQLTypeCode has informative repr."""

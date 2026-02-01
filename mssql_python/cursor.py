@@ -97,6 +97,11 @@ class SQLTypeCode:
                 ddbc_sql_const.SQL_TIMESTAMP.value: datetime.datetime,
                 ddbc_sql_const.SQL_TIME.value: datetime.time,
                 ddbc_sql_const.SQL_SS_TIME2.value: datetime.time,  # SQL Server TIME(n)
+                # ODBC 3.x date/time type codes (SQL_TYPE_DATE/TIME/TIMESTAMP/TIMESTAMP_WITH_TIMEZONE)
+                91: datetime.date,  # SQL_TYPE_DATE
+                92: datetime.time,  # SQL_TYPE_TIME
+                93: datetime.datetime,  # SQL_TYPE_TIMESTAMP
+                95: datetime.datetime,  # SQL_TYPE_TIMESTAMP_WITH_TIMEZONE
                 ddbc_sql_const.SQL_BIT.value: bool,
                 ddbc_sql_const.SQL_TINYINT.value: int,
                 ddbc_sql_const.SQL_SMALLINT.value: int,
@@ -131,8 +136,10 @@ class SQLTypeCode:
     def __ne__(self, other):
         return not self.__eq__(other)
 
-    def __hash__(self):
-        return hash(self.type_code)
+    # Instances are intentionally unhashable because __eq__ allows
+    # comparisons to both Python types and integer SQL codes, and
+    # there is no single hash value that can be consistent with both.
+    __hash__ = None
 
     def __int__(self):
         return self.type_code

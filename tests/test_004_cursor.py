@@ -14015,8 +14015,8 @@ def test_geography_description_metadata(cursor, db_connection):
         assert len(desc) == 2, "Should have 2 columns in description"
         assert desc[0][0] == "id", "First column should be 'id'"
         assert desc[1][0] == "geo_col", "Second column should be 'geo_col'"
-        # Note: Geography type ID might vary, but should be present
-        assert desc[1][1] is not None, "Geography column should have a type"
+        # Geography should be SQL_SS_UDT (-151)
+        assert int(desc[1][1]) == -151, "Geography column should have SQL_SS_UDT type code (-151)"
 
     finally:
         cursor.execute("DROP TABLE IF EXISTS #pytest_geography_desc;")

@@ -3013,7 +3013,7 @@ SQLRETURN SQLGetData_wrap(SqlHandlePtr StatementHandle, SQLUSMALLINT colCount, p
                 break;
             }
             case SQL_SS_UDT: {
-                LOG("SQLGetData: Streaming UDT (geometry/geography) for column %d", i);
+                LOG("SQLGetData: Streaming SQL Server UDT (e.g., geometry/geography/hierarchyid) for column %d", i);
                 row.append(FetchLobColumnData(hStmt, i, SQL_C_BINARY, false, true));
                 break;
             }

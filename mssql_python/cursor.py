@@ -69,7 +69,7 @@ class SQLTypeCode:
     # SQL type code to Python type mapping (class-level cache)
     _type_map = None
 
-    def __init__(self, type_code: int, python_type: type = None):
+    def __init__(self, type_code: int, python_type: Optional[type] = None):
         self.type_code = type_code
         # If python_type not provided, look it up from the mapping
         if python_type is None:

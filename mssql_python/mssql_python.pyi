@@ -160,7 +160,7 @@ class Row:
         description: List[
             Tuple[
                 str,
-                SQLTypeCode,
+                Union[SQLTypeCode, type],
                 Optional[int],
                 Optional[int],
                 Optional[int],
@@ -197,7 +197,7 @@ class Cursor:
         List[
             Tuple[
                 str,
-                SQLTypeCode,
+                Union[SQLTypeCode, type],
                 Optional[int],
                 Optional[int],
                 Optional[int],

@@ -28,8 +28,12 @@
 #define SQL_MAX_NUMERIC_LEN 16
 #define SQL_SS_XML (-152)
 #define SQL_SS_UDT (-151)  // SQL Server User-Defined Types (geometry, geography, hierarchyid)
+#ifndef SQL_DATETIME2
 #define SQL_DATETIME2 (42)
+#endif
+#ifndef SQL_SMALLDATETIME
 #define SQL_SMALLDATETIME (58)
+#endif
 
 // NOTE: The following SQL Server-specific type constants MUST stay in sync with
 // the corresponding values in mssql_python/constants.py (ConstantsDDBC enum):
@@ -3014,7 +3018,7 @@ SQLRETURN SQLGetData_wrap(SqlHandlePtr StatementHandle, SQLUSMALLINT colCount, p
             }
             case SQL_SS_UDT: {
                 LOG("SQLGetData: Streaming SQL Server UDT (e.g., geometry/geography/hierarchyid) for column %d", i);
-                row.append(FetchLobColumnData(hStmt, i, SQL_C_BINARY, false, true));
+                row.append(FetchLobColumnData(hStmt, i, SQL_C_BINARY, false, true, ""));
                 break;
             }
             case SQL_SS_XML: {

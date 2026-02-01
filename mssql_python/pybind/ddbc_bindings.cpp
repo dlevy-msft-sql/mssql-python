@@ -3979,6 +3979,8 @@ size_t calculateRowSize(py::list& columnNames, SQLUSMALLINT numCols) {
             case SQL_TIMESTAMP:
             case SQL_TYPE_TIMESTAMP:
             case SQL_DATETIME:
+            case SQL_DATETIME2:
+            case SQL_SMALLDATETIME:
                 rowSize += sizeof(SQL_TIMESTAMP_STRUCT);
                 break;
             case SQL_BIGINT:

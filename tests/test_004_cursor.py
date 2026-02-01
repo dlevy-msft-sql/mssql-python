@@ -14245,13 +14245,14 @@ def test_geography_output_converter(cursor, db_connection):
         # Register the converter for SQL_SS_UDT type (-151)
         db_connection.add_output_converter(-151, geography_converter)
 
-        # Fetch data - converter should be called
-        row = cursor.execute("SELECT geo_col FROM #pytest_geography_converter;").fetchone()
-        assert len(converted) > 0, "Converter should have been called"
-        assert isinstance(row[0], bytes), "Geography should still be bytes"
-
-        # Clean up converter
-        db_connection.remove_output_converter(-151)
+        try:
+            # Fetch data - converter should be called
+            row = cursor.execute("SELECT geo_col FROM #pytest_geography_converter;").fetchone()
+            assert len(converted) > 0, "Converter should have been called"
+            assert isinstance(row[0], bytes), "Geography should still be bytes"
+        finally:
+            # Clean up converter - always remove even if assertions fail
+            db_connection.remove_output_converter(-151)
 
     finally:
         cursor.execute("DROP TABLE IF EXISTS #pytest_geography_converter;")

@@ -947,8 +947,10 @@ class Connection:
                           backward compatibility.
             func (callable): The converter function which will be called with a single parameter,
                             the value, and should return the converted value. If the value is NULL
-                            then the parameter passed to the function will be None, otherwise it
-                            will be a bytes object.
+                            then the parameter passed to the function will be None. For string/binary
+                            columns, the value will be bytes (UTF-16LE encoded for strings). For other
+                            types (int, decimal.Decimal, datetime, etc.), the value will be the native
+                            Python object.
 
         Returns:
             None

@@ -925,7 +925,7 @@ class Connection:
         return cursor
 
     def add_output_converter(
-        self, sqltype: "Union[int, SQLTypeCode]", func: Callable[[Any], Any]
+        self, sqltype: "Union[int, SQLTypeCode, type]", func: Callable[[Any], Any]
     ) -> None:
         """
         Register an output converter function that will be called whenever a value
@@ -939,11 +939,12 @@ class Connection:
         vulnerabilities. This API should never be exposed to untrusted or external input.
 
         Args:
-            sqltype (int or SQLTypeCode): The integer SQL type value to convert, which can be
+            sqltype (int, SQLTypeCode, or type): The integer SQL type value to convert, which can be
                           one of the defined standard constants (e.g. SQL_VARCHAR) or a
                           database-specific value (e.g. -151 for the SQL Server 2008
                           geometry data type). Also accepts SQLTypeCode objects (from
-                          cursor.description).
+                          cursor.description) or Python types (e.g., str, int) for
+                          backward compatibility.
             func (callable): The converter function which will be called with a single parameter,
                             the value, and should return the converted value. If the value is NULL
                             then the parameter passed to the function will be None, otherwise it
@@ -965,7 +966,7 @@ class Connection:
         logger.info(f"Added output converter for SQL type {sqltype}")
 
     def get_output_converter(
-        self, sqltype: "Union[int, SQLTypeCode]"
+        self, sqltype: "Union[int, SQLTypeCode, type]"
     ) -> Optional[Callable[[Any], Any]]:
         """
         Get the output converter function for the specified SQL type.
@@ -973,9 +974,10 @@ class Connection:
         Thread-safe implementation that protects the converters dictionary with a lock.
 
         Args:
-            sqltype (int or SQLTypeCode): The SQL type value to get the converter for.
+            sqltype (int, SQLTypeCode, or type): The SQL type value to get the converter for.
                 Also accepts SQLTypeCode objects (from cursor.description), which are
-                automatically converted to their integer type code.
+                automatically converted to their integer type code, or Python types
+                (e.g., str, int) for backward compatibility.
 
         Returns:
             callable or None: The converter function or None if no converter is registered
@@ -991,15 +993,16 @@ class Connection:
         with self._converters_lock:
             return self._output_converters.get(sqltype)
 
-    def remove_output_converter(self, sqltype: "Union[int, SQLTypeCode]") -> None:
+    def remove_output_converter(self, sqltype: "Union[int, SQLTypeCode, type]") -> None:
         """
         Remove the output converter function for the specified SQL type.
 
         Thread-safe implementation that protects the converters dictionary with a lock.
 
         Args:
-            sqltype (int or SQLTypeCode): The SQL type value to remove the converter for.
-                Also accepts SQLTypeCode objects (from cursor.description).
+            sqltype (int, SQLTypeCode, or type): The SQL type value to remove the converter for.
+                Also accepts SQLTypeCode objects (from cursor.description) or Python types
+                (e.g., str, int) for backward compatibility.
 
         Returns:
             None

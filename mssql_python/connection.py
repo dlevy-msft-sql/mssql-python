@@ -47,6 +47,7 @@ from mssql_python.constants import _RESERVED_PARAMETERS
 
 if TYPE_CHECKING:
     from mssql_python.row import Row
+    from mssql_python.cursor import SQLTypeCode
 
 # Add SQL_WMETADATA constant for metadata decoding configuration
 SQL_WMETADATA: int = -99  # Special flag for column name decoding
@@ -923,7 +924,9 @@ class Connection:
         logger.debug("cursor: Cursor created successfully - total_cursors=%d", len(self._cursors))
         return cursor
 
-    def add_output_converter(self, sqltype: int, func: Callable[[Any], Any]) -> None:
+    def add_output_converter(
+        self, sqltype: "Union[int, SQLTypeCode]", func: Callable[[Any], Any]
+    ) -> None:
         """
         Register an output converter function that will be called whenever a value
         with the given SQL type is read from the database.
@@ -936,10 +939,11 @@ class Connection:
         vulnerabilities. This API should never be exposed to untrusted or external input.
 
         Args:
-            sqltype (int): The integer SQL type value to convert, which can be one of the
-                          defined standard constants (e.g. SQL_VARCHAR) or a database-specific
-                          value (e.g. -151 for the SQL Server 2008 geometry data type).
-                          Also accepts SQLTypeCode objects (from cursor.description).
+            sqltype (int or SQLTypeCode): The integer SQL type value to convert, which can be
+                          one of the defined standard constants (e.g. SQL_VARCHAR) or a
+                          database-specific value (e.g. -151 for the SQL Server 2008
+                          geometry data type). Also accepts SQLTypeCode objects (from
+                          cursor.description).
             func (callable): The converter function which will be called with a single parameter,
                             the value, and should return the converted value. If the value is NULL
                             then the parameter passed to the function will be None, otherwise it

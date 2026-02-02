@@ -136,10 +136,16 @@ class SQLTypeCode:
     def __ne__(self, other):
         return not self.__eq__(other)
 
-    # Instances are intentionally unhashable because __eq__ allows
-    # comparisons to both Python types and integer SQL codes, and
-    # there is no single hash value that can be consistent with both.
-    __hash__ = None
+    def __hash__(self):
+        """
+        SQLTypeCode is intentionally unhashable because __eq__ allows
+        comparisons to both Python types and integer SQL codes, and
+        there is no single hash value that can be consistent with both.
+        """
+        raise TypeError(
+            "SQLTypeCode is unhashable. Use int(type_code) or type_code.type_code "
+            "as a dict key instead. Example: {int(desc[1]): handler}"
+        )
 
     def __int__(self):
         return self.type_code

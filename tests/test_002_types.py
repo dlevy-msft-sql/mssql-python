@@ -1357,9 +1357,9 @@ class TestSQLTypeCode:
 
         tc = SQLTypeCode(4)
         # SQLTypeCode should not be hashable because __eq__ compares to both
-        # Python types and integers, which have different hash values
-        with pytest.raises(TypeError):
-            hash(tc)
+        # Python types and integers, which have different hash values.
+        # Instead of calling hash(tc), assert that hashing is disabled via __hash__.
+        assert type(tc).__hash__ is None
 
     def test_sqltypecode_repr(self):
         """Test SQLTypeCode has informative repr."""

@@ -4014,9 +4014,15 @@ size_t calculateRowSize(py::list& columnNames, SQLUSMALLINT numCols) {
             case SQL_SS_TIMESTAMPOFFSET:
                 rowSize += sizeof(DateTimeOffset);
                 break;
-            case SQL_SS_UDT:
-                rowSize += columnSize;  // UDT types use column size as-is
+            case SQL_SS_UDT: {
+                SQLULEN effectiveSize = columnSize;
+                // Guard against SQL_NO_TOTAL or unrealistic sizes to avoid inflating/overflowing rowSize.
+                if (effectiveSize == SQL_NO_TOTAL || effectiveSize == 0 || effectiveSize > SQL_MAX_LOB_SIZE) {
+                    effectiveSize = SQL_MAX_LOB_SIZE;
+                }
+                rowSize += static_cast<size_t>(effectiveSize);
                 break;
+            }
             default:
                 std::wstring columnName = columnMeta["ColumnName"].cast<std::wstring>();
                 std::ostringstream errorString;

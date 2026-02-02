@@ -990,10 +990,16 @@ class Connection:
         """
         # Handle SQLTypeCode objects (from cursor.description) by converting to int
         # SQLTypeCode has a type_code attribute and supports int() conversion
+        original_sqltype = sqltype
         if hasattr(sqltype, "type_code"):
             sqltype = sqltype.type_code
         with self._converters_lock:
-            return self._output_converters.get(sqltype)
+            result = self._output_converters.get(sqltype)
+            # If int lookup misses for an SQLTypeCode, also try its python_type
+            # to preserve backward compatibility with converters registered by Python type
+            if result is None and hasattr(original_sqltype, "python_type"):
+                result = self._output_converters.get(original_sqltype.python_type)
+            return result
 
     def remove_output_converter(self, sqltype: "Union[int, SQLTypeCode, type]") -> None:
         """

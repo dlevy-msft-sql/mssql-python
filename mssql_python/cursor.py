@@ -831,6 +831,8 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             logger.debug("SQLFreeHandle succeeded")
 
         self._clear_rownumber()
+        self._column_metadata = None  # Clear metadata to prevent stale data
+        self.description = None  # Clear description for consistency
 
         # Reinitialize the statement handle
         self._initialize_cursor()

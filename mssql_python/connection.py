@@ -962,14 +962,16 @@ class Connection:
                 self._conn.add_output_converter(sqltype, func)
         logger.info(f"Added output converter for SQL type {sqltype}")
 
-    def get_output_converter(self, sqltype: Union[int, type]) -> Optional[Callable[[Any], Any]]:
+    def get_output_converter(
+        self, sqltype: "Union[int, SQLTypeCode]"
+    ) -> Optional[Callable[[Any], Any]]:
         """
         Get the output converter function for the specified SQL type.
 
         Thread-safe implementation that protects the converters dictionary with a lock.
 
         Args:
-            sqltype (int or type): The SQL type value or Python type to get the converter for.
+            sqltype (int or SQLTypeCode): The SQL type value to get the converter for.
                 Also accepts SQLTypeCode objects (from cursor.description), which are
                 automatically converted to their integer type code.
 
@@ -987,14 +989,14 @@ class Connection:
         with self._converters_lock:
             return self._output_converters.get(sqltype)
 
-    def remove_output_converter(self, sqltype: Union[int, type]) -> None:
+    def remove_output_converter(self, sqltype: "Union[int, SQLTypeCode]") -> None:
         """
         Remove the output converter function for the specified SQL type.
 
         Thread-safe implementation that protects the converters dictionary with a lock.
 
         Args:
-            sqltype (int or type): The SQL type value to remove the converter for.
+            sqltype (int or SQLTypeCode): The SQL type value to remove the converter for.
                 Also accepts SQLTypeCode objects (from cursor.description).
 
         Returns:

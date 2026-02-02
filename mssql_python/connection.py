@@ -958,7 +958,9 @@ class Connection:
         with self._converters_lock:
             self._output_converters[sqltype] = func
             # Pass to the underlying connection if native implementation supports it
-            if hasattr(self._conn, "add_output_converter"):
+            # Only forward int type codes to native layer; Python type keys are handled
+            # only in our Python-side dictionary
+            if isinstance(sqltype, int) and hasattr(self._conn, "add_output_converter"):
                 self._conn.add_output_converter(sqltype, func)
         logger.info(f"Added output converter for SQL type {sqltype}")
 

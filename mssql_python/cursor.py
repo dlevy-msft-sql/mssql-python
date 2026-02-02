@@ -1118,12 +1118,12 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
                 converter = self.connection.get_output_converter(python_type)
 
             # Additional fallback for string/bytes values:
-            # If a user has only registered a SQL_WVARCHAR (-9) converter and this column
+            # If a user has only registered a SQL_WVARCHAR converter and this column
             # is mapped to str/bytes, try that converter so behavior matches the
             # non-optimized Row._apply_output_converters path.
             if converter is None and python_type in (str, bytes):
-                # -9 is the ODBC type code for SQL_WVARCHAR.
-                converter = self.connection.get_output_converter(-9)
+                # Use the named constant for SQL_WVARCHAR instead of the magic number -9.
+                converter = self.connection.get_output_converter(ddbc_sql_const.SQL_WVARCHAR.value)
 
             converter_map.append(converter)
 

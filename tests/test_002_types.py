@@ -1454,7 +1454,7 @@ class TestSQLTypeCode:
         tc2 = SQLTypeCode(4)
         tc3 = SQLTypeCode(-9)
 
-        # Explicitly test __eq__ with SQLTypeCode argument (covers cursor.py line 128)
+        # Explicitly test __eq__ when comparing one SQLTypeCode instance to another
         result1 = tc1.__eq__(tc2)  # Same type codes
         result2 = tc1.__eq__(tc3)  # Different type codes
         assert result1 is True, "Same code SQLTypeCodes should be equal"

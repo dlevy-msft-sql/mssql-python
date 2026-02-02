@@ -1111,13 +1111,26 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             sql_type = col_meta["DataType"]
             converter = self.connection.get_output_converter(sql_type)
 
-            # Fallback: If no converter found for SQL type code, try the mapped Python type
-            # This provides backward compatibility for code that registered converters by Python type
+            # Fallback: If no converter found for SQL type code, try the mapped Python type.
+            # This provides backward compatibility for code that registered converters by Python type.
             if converter is None:
                 python_type = SQLTypeCode._get_python_type(sql_type)
                 converter = self.connection.get_output_converter(python_type)
 
+            # Additional fallback for string/bytes values:
+            # If a user has only registered a SQL_WVARCHAR (-9) converter and this column
+            # is mapped to str/bytes, try that converter so behavior matches the
+            # non-optimized Row._apply_output_converters path.
+            if converter is None and python_type in (str, bytes):
+                # -9 is the ODBC type code for SQL_WVARCHAR.
+                converter = self.connection.get_output_converter(-9)
+
             converter_map.append(converter)
+
+        # If all entries are None, return None so that Row can fall back to the
+        # non-optimized path, preserving legacy behavior and fallbacks.
+        if not any(converter_map):
+            return None
 
         return converter_map
 

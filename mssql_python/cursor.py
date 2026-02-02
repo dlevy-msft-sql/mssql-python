@@ -834,6 +834,12 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         self._column_metadata = None  # Clear metadata to prevent stale data
         self.description = None  # Clear description for consistency
 
+        # Clear any result-set-specific caches to avoid stale mappings
+        if hasattr(self, "_cached_column_map"):
+            self._cached_column_map = None
+        if hasattr(self, "_cached_converter_map"):
+            self._cached_converter_map = None
+
         # Reinitialize the statement handle
         self._initialize_cursor()
 

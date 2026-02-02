@@ -1110,11 +1110,12 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             # Use the raw SQL type code from metadata, not the mapped Python type
             sql_type = col_meta["DataType"]
             converter = self.connection.get_output_converter(sql_type)
-            # If no converter found for the SQL type, try the WVARCHAR converter as a fallback
-            if converter is None:
-                from mssql_python.constants import ConstantsDDBC
 
-                converter = self.connection.get_output_converter(ConstantsDDBC.SQL_WVARCHAR.value)
+            # Fallback: If no converter found for SQL type code, try the mapped Python type
+            # This provides backward compatibility for code that registered converters by Python type
+            if converter is None:
+                python_type = SQLTypeCode._get_python_type(sql_type)
+                converter = self.connection.get_output_converter(python_type)
 
             converter_map.append(converter)
 

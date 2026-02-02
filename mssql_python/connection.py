@@ -1014,7 +1014,9 @@ class Connection:
             if sqltype in self._output_converters:
                 del self._output_converters[sqltype]
                 # Pass to the underlying connection if native implementation supports it
-                if hasattr(self._conn, "remove_output_converter"):
+                # Only forward int type codes to native layer; Python type keys are handled
+                # only in our Python-side dictionary
+                if isinstance(sqltype, int) and hasattr(self._conn, "remove_output_converter"):
                     self._conn.remove_output_converter(sqltype)
         logger.info(f"Removed output converter for SQL type {sqltype}")
 

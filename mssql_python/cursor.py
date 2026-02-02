@@ -1467,16 +1467,6 @@ class Cursor:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             self._cached_column_map = None
             self._cached_converter_map = None
 
-        # After successful execution, initialize description if there are results
-        column_metadata = []
-        try:
-            ddbc_bindings.DDBCSQLDescribeCol(self.hstmt, column_metadata)
-            self._initialize_description(column_metadata)
-        except Exception as e:
-            # If describe fails, it's likely there are no results (e.g., for INSERT)
-            self.description = None
-            self._column_metadata = None  # Clear metadata to prevent stale data
-
         self._reset_inputsizes()  # Reset input sizes after execution
         # Return self for method chaining
         return self

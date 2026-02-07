@@ -28,6 +28,15 @@
 #define SQL_MAX_NUMERIC_LEN 16
 #define SQL_SS_XML (-152)
 
+// These type codes are reported by some ODBC drivers for DATETIME2 /
+// SMALLDATETIME columns but are not part of the standard sql.h headers.
+#ifndef SQL_DATETIME2
+#define SQL_DATETIME2 (42)
+#endif
+#ifndef SQL_SMALLDATETIME
+#define SQL_SMALLDATETIME (58)
+#endif
+
 #define STRINGIFY_FOR_CASE(x)                                                                      \
     case x:                                                                                        \
         return #x
@@ -3226,6 +3235,8 @@ SQLRETURN SQLGetData_wrap(SqlHandlePtr StatementHandle, SQLUSMALLINT colCount, p
                 }
                 break;
             }
+            case SQL_DATETIME2:
+            case SQL_SMALLDATETIME:
             case SQL_TIMESTAMP:
             case SQL_TYPE_TIMESTAMP:
             case SQL_DATETIME: {
@@ -3522,6 +3533,8 @@ SQLRETURN SQLBindColums(SQLHSTMT hStmt, ColumnBuffers& buffers, py::list& column
                     SQLBindCol_ptr(hStmt, col, SQL_C_DOUBLE, buffers.doubleBuffers[col - 1].data(),
                                    sizeof(SQLDOUBLE), buffers.indicators[col - 1].data());
                 break;
+            case SQL_DATETIME2:
+            case SQL_SMALLDATETIME:
             case SQL_TIMESTAMP:
             case SQL_TYPE_TIMESTAMP:
             case SQL_DATETIME:
@@ -3808,6 +3821,8 @@ SQLRETURN FetchBatchData(SQLHSTMT hStmt, ColumnBuffers& buffers, py::list& colum
                     }
                     break;
                 }
+                case SQL_DATETIME2:
+                case SQL_SMALLDATETIME:
                 case SQL_TIMESTAMP:
                 case SQL_TYPE_TIMESTAMP:
                 case SQL_DATETIME: {
@@ -3958,6 +3973,8 @@ size_t calculateRowSize(py::list& columnNames, SQLUSMALLINT numCols) {
             case SQL_NUMERIC:
                 rowSize += MAX_DIGITS_IN_NUMERIC;
                 break;
+            case SQL_DATETIME2:
+            case SQL_SMALLDATETIME:
             case SQL_TIMESTAMP:
             case SQL_TYPE_TIMESTAMP:
             case SQL_DATETIME:
